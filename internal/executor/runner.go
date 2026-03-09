@@ -27,24 +27,24 @@ type TaskExecutor interface {
 
 // TaskResult represents the result of a task execution
 type TaskResult struct {
-	TaskID      string
-	Status      api.TaskStatus
-	Output      []byte
-	Error       string
-	Duration    time.Duration
-	StartTime   time.Time
-	EndTime     time.Time
-	GPUUsed     int64 // MB
+	TaskID    string
+	Status    api.TaskStatus
+	Output    []byte
+	Error     string
+	Duration  time.Duration
+	StartTime time.Time
+	EndTime   time.Time
+	GPUUsed   int64 // MB
 }
 
 // TaskRunner manages task execution
 type TaskRunner struct {
-	executors    map[api.TaskType]TaskExecutor
-	gpuPool      *gpu.Pool
-	resultChan   chan *TaskResult
-	wg           sync.WaitGroup
-	ctx          context.Context
-	cancel       context.CancelFunc
+	executors  map[api.TaskType]TaskExecutor
+	gpuPool    *gpu.Pool
+	resultChan chan *TaskResult
+	wg         sync.WaitGroup
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 // NewTaskRunner creates a new TaskRunner
@@ -142,6 +142,7 @@ func DefaultExecutors() []TaskExecutor {
 // embeddingExecutor executes embedding tasks
 type embeddingExecutor struct{}
 
+// NewEmbeddingExecutor creates a new embedding executor
 func NewEmbeddingExecutor() TaskExecutor {
 	return &embeddingExecutor{}
 }
@@ -171,6 +172,7 @@ func (e *embeddingExecutor) Close() error {
 // llmExecutor executes LLM inference tasks
 type llmExecutor struct{}
 
+// NewLLMExecutor creates a new LLM executor
 func NewLLMExecutor() TaskExecutor {
 	return &llmExecutor{}
 }
@@ -206,6 +208,7 @@ func (e *llmExecutor) Close() error {
 // diffusionExecutor executes diffusion tasks
 type diffusionExecutor struct{}
 
+// NewDiffusionExecutor creates a new diffusion executor
 func NewDiffusionExecutor() TaskExecutor {
 	return &diffusionExecutor{}
 }
@@ -235,6 +238,7 @@ func (e *diffusionExecutor) Close() error {
 // genericExecutor executes generic GPU tasks
 type genericExecutor struct{}
 
+// NewGenericExecutor creates a new generic executor
 func NewGenericExecutor() TaskExecutor {
 	return &genericExecutor{}
 }

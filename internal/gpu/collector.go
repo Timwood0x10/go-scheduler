@@ -14,11 +14,11 @@ import (
 
 // Collector collects GPU metrics
 type Collector struct {
-	interval  time.Duration
-	pool      *Pool
-	mu        sync.RWMutex
-	running   bool
-	stopCh    chan struct{}
+	interval time.Duration
+	pool     *Pool
+	mu       sync.RWMutex
+	running  bool
+	stopCh   chan struct{}
 }
 
 // NewCollector creates a new GPU metrics collector
@@ -88,18 +88,18 @@ func (c *Collector) collect() {
 	c.updateGPUPool(metrics)
 }
 
-// GPUMetrics represents GPU metrics from nvidia-smi
-type GPUMetrics struct {
-	ID            int
-	MemoryUsed    int64
-	MemoryTotal   int64
-	ComputeUtil   int
-	MemoryUtil    int
-	Temperature   int
+// Metrics represents GPU metrics from nvidia-smi
+type Metrics struct {
+	ID          int
+	MemoryUsed  int64
+	MemoryTotal int64
+	ComputeUtil int
+	MemoryUtil  int
+	Temperature int
 }
 
 // queryNvidiaSMI queries nvidia-smi for GPU metrics
-func (c *Collector) queryNvidiaSMI() ([]GPUMetrics, error) {
+func (c *Collector) queryNvidiaSMI() ([]Metrics, error) {
 	// Try to get GPU metrics using nvidia-smi
 	// Format: gpu_index, memory_used, memory_total, util.gpu, util.memory, temperature.gpu
 	cmd := exec.Command("nvidia-smi",
@@ -112,7 +112,7 @@ func (c *Collector) queryNvidiaSMI() ([]GPUMetrics, error) {
 		return c.getDummyMetrics(), nil
 	}
 
-	metrics := make([]GPUMetrics, 0)
+	metrics := make([]Metrics, 0)
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
 
 	for scanner.Scan() {
@@ -129,7 +129,7 @@ func (c *Collector) queryNvidiaSMI() ([]GPUMetrics, error) {
 		memUtil, _ := strconv.Atoi(strings.TrimSpace(fields[4]))
 		temp, _ := strconv.Atoi(strings.TrimSpace(fields[5]))
 
-		metrics = append(metrics, GPUMetrics{
+		metrics = append(metrics, Metrics{
 			ID:          id,
 			MemoryUsed:  memUsed,
 			MemoryTotal: memTotal,
@@ -147,12 +147,12 @@ func (c *Collector) queryNvidiaSMI() ([]GPUMetrics, error) {
 }
 
 // getDummyMetrics returns dummy metrics when nvidia-smi is not available
-func (c *Collector) getDummyMetrics() []GPUMetrics {
+func (c *Collector) getDummyMetrics() []Metrics {
 	gpus := c.pool.GetAllGPUs()
-	metrics := make([]GPUMetrics, len(gpus))
+	metrics := make([]Metrics, len(gpus))
 
 	for i, gpu := range gpus {
-		metrics[i] = GPUMetrics{
+		metrics[i] = Metrics{
 			ID:          gpu.ID,
 			MemoryUsed:  gpu.GetMemoryUsed(),
 			MemoryTotal: gpu.MemoryTotal,
@@ -166,7 +166,7 @@ func (c *Collector) getDummyMetrics() []GPUMetrics {
 }
 
 // updateGPUPool updates the GPU pool with new metrics
-func (c *Collector) updateGPUPool(metrics []GPUMetrics) {
+func (c *Collector) updateGPUPool(metrics []Metrics) {
 	for _, m := range metrics {
 		gpu, ok := c.pool.GetGPU(m.ID)
 		if !ok {
@@ -188,28 +188,28 @@ func (c *Collector) GetGPUMetricsJSON() (string, error) {
 	gpus := c.pool.GetAllGPUs()
 
 	type gpuMetricJSON struct {
-		ID            int   `json:"gpu_id"`
-		MemoryTotal   int64 `json:"memory_total_mb"`
-		MemoryUsed    int64 `json:"memory_used_mb"`
-		MemoryFree    int64 `json:"memory_free_mb"`
-		ComputeUtil   int   `json:"compute_util_percent"`
-		MemoryUtil    int   `json:"memory_util_percent"`
-		Temperature   int   `json:"temperature_celsius"`
-		LastUpdated   int64 `json:"last_updated_unix"`
+		ID          int   `json:"gpu_id"`
+		MemoryTotal int64 `json:"memory_total_mb"`
+		MemoryUsed  int64 `json:"memory_used_mb"`
+		MemoryFree  int64 `json:"memory_free_mb"`
+		ComputeUtil int   `json:"compute_util_percent"`
+		MemoryUtil  int   `json:"memory_util_percent"`
+		Temperature int   `json:"temperature_celsius"`
+		LastUpdated int64 `json:"last_updated_unix"`
 	}
 
 	metrics := make([]gpuMetricJSON, len(gpus))
 	for i, gpu := range gpus {
 		gpu.mu.RLock()
 		metrics[i] = gpuMetricJSON{
-			ID:           gpu.ID,
-			MemoryTotal:  gpu.MemoryTotal,
-			MemoryUsed:   gpu.MemoryUsed,
-			MemoryFree:   gpu.MemoryTotal - gpu.MemoryUsed,
-			ComputeUtil:  gpu.ComputeUtil,
-			MemoryUtil:   gpu.MemoryUtil,
-			Temperature:  gpu.Temperature,
-			LastUpdated:  gpu.LastUpdated.Unix(),
+			ID:          gpu.ID,
+			MemoryTotal: gpu.MemoryTotal,
+			MemoryUsed:  gpu.MemoryUsed,
+			MemoryFree:  gpu.MemoryTotal - gpu.MemoryUsed,
+			ComputeUtil: gpu.ComputeUtil,
+			MemoryUtil:  gpu.MemoryUtil,
+			Temperature: gpu.Temperature,
+			LastUpdated: gpu.LastUpdated.Unix(),
 		}
 		gpu.mu.RUnlock()
 	}
