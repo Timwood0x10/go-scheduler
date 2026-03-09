@@ -1,0 +1,65 @@
+package types
+
+import (
+	"time"
+
+	"algogpu/api"
+)
+
+// Task represents a GPU task in the scheduler
+type Task struct {
+	ID                 string
+	UserID             string
+	Type               api.TaskType
+	GPUMemoryRequired  int64 // MB
+	GPUComputeRequired int64 // TFLOPS
+	EstimatedRuntimeMs int64
+	Payload            []byte
+	Status             api.TaskStatus
+	CreatedAt          time.Time
+	StartedAt          time.Time
+	CompletedAt        time.Time
+	Message            string
+}
+
+// ToProto converts Task to protobuf message
+func (t *Task) ToProto() *api.TaskRequest {
+	return &api.TaskRequest{
+		TaskId:             t.ID,
+		UserId:             t.UserID,
+		TaskType:           t.Type,
+		GpuMemoryRequired:  t.GPUMemoryRequired,
+		GpuComputeRequired: t.GPUComputeRequired,
+		EstimatedRuntimeMs: t.EstimatedRuntimeMs,
+		Payload:            t.Payload,
+	}
+}
+
+// TaskFromProto creates Task from protobuf message
+func TaskFromProto(req *api.TaskRequest) *Task {
+	return &Task{
+		ID:                 req.TaskId,
+		UserID:             req.UserId,
+		Type:               req.TaskType,
+		GPUMemoryRequired:  req.GpuMemoryRequired,
+		GPUComputeRequired: req.GpuComputeRequired,
+		EstimatedRuntimeMs: req.EstimatedRuntimeMs,
+		Payload:            req.Payload,
+		Status:             api.TaskStatus_TASK_STATUS_PENDING,
+		CreatedAt:          time.Now(),
+	}
+}
+
+// GetTaskCost returns the GPU cost for the task type
+func GetTaskCost(taskType api.TaskType) int64 {
+	switch taskType {
+	case api.TaskType_TASK_TYPE_EMBEDDING:
+		return 1
+	case api.TaskType_TASK_TYPE_LLM:
+		return 5
+	case api.TaskType_TASK_TYPE_DIFFUSION:
+		return 10
+	default:
+		return 1
+	}
+}

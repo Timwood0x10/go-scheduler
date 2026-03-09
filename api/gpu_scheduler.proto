@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package algogpu;
+
+option go_package = "algogpu/api";
+
+service GPUScheduler {
+    // 提交任务
+    rpc SubmitTask(TaskRequest) returns (TaskResponse);
+
+    // 查询任务状态
+    rpc GetTaskStatus(TaskStatusRequest) returns (TaskStatusResponse);
+
+    // 取消任务
+    rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
+
+    // 获取 GPU 状态
+    rpc GetGPUStatus(GetGPUStatusRequest) returns (GPUStatusResponse);
+
+    // 任务结果流
+    rpc TaskEvents(TaskEventsRequest) returns (stream TaskEvent);
+}
+
+enum TaskType {
+    TASK_TYPE_UNSPECIFIED = 0;
+    TASK_TYPE_EMBEDDING = 1;
+    TASK_TYPE_LLM = 2;
+    TASK_TYPE_DIFFUSION = 3;
+    TASK_TYPE_OTHER = 4;
+}
+
+enum TaskStatus {
+    TASK_STATUS_PENDING = 0;
+    TASK_STATUS_RUNNING = 1;
+    TASK_STATUS_COMPLETED = 2;
+    TASK_STATUS_FAILED = 3;
+    TASK_STATUS_CANCELLED = 4;
+    TASK_STATUS_REJECTED = 5;
+}
+
+message TaskRequest {
+    string task_id = 1;
+    string user_id = 2;
+    TaskType task_type = 3;
+    int64 gpu_memory_required = 4;  // MB
+    int64 gpu_compute_required = 5;  // TFLOPS estimate
+    int64 estimated_runtime_ms = 6;
+    bytes payload = 7;  // 任务具体数据
+}
+
+message TaskResponse {
+    bool accepted = 1;
+    string message = 2;
+    TaskStatus status = 3;
+}
+
+message TaskStatusRequest {
+    string task_id = 1;
+}
+
+message TaskStatusResponse {
+    string task_id = 1;
+    TaskStatus status = 2;
+    string message = 3;
+    int64 created_at = 4;
+    int64 started_at = 5;
+    int64 completed_at = 6;
+}
+
+message CancelTaskRequest {
+    string task_id = 1;
+}
+
+message CancelTaskResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message GetGPUStatusRequest {}
+
+message GPUInfo {
+    int32 gpu_id = 1;
+    string name = 2;
+    int64 memory_total = 3;      // MB
+    int64 memory_used = 4;       // MB
+    int64 memory_free = 5;       // MB
+    int32 compute_util = 6;     // percentage
+    int32 memory_util = 7;       // percentage
+    int32 temperature = 8;      // celsius
+    repeated string running_tasks = 9;
+}
+
+message GPUStatusResponse {
+    repeated GPUInfo gpus = 1;
+    int64 timestamp = 2;
+}
+
+message TaskEventsRequest {}
+
+message TaskEvent {
+    string task_id = 1;
+    TaskStatus status = 2;
+    string message = 3;
+    int64 timestamp = 4;
+}
