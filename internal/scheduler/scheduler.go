@@ -24,6 +24,7 @@ type Scheduler struct {
 	usageTracker *UsageTracker
 	gpuPacking   *GPUPackingStrategy
 	taskAging    *TaskAging
+	costModel    *CostModel
 
 	// Scheduler state
 	mu              sync.RWMutex
@@ -34,6 +35,7 @@ type Scheduler struct {
 // NewScheduler creates a new Scheduler
 func NewScheduler(cfg *Config, taskQueue *queue.TaskQueue, gpuPool *gpu.Pool) *Scheduler {
 	usageTracker := NewUsageTracker(cfg.UsageWindowMinutes)
+	costModel := NewCostModel()
 
 	return &Scheduler{
 		cfg:       cfg,
@@ -46,6 +48,7 @@ func NewScheduler(cfg *Config, taskQueue *queue.TaskQueue, gpuPool *gpu.Pool) *S
 		usageTracker: usageTracker,
 		gpuPacking:   NewGPUPackingStrategy(gpuPool, cfg),
 		taskAging:    NewTaskAging(cfg.AgingFactor),
+		costModel:    costModel,
 
 		running:         false,
 		schedulerLoopCh: make(chan struct{}, 1),
@@ -201,4 +204,19 @@ func (s *Scheduler) GetGPUPool() *gpu.Pool {
 // GetTaskQueue returns the task queue
 func (s *Scheduler) GetTaskQueue() *queue.TaskQueue {
 	return s.taskQueue
+}
+
+// GetCostModel returns the cost model
+func (s *Scheduler) GetCostModel() *CostModel {
+	return s.costModel
+}
+
+// EstimateTaskCost estimates GPU cost for a task
+func (s *Scheduler) EstimateTaskCost(taskType api.TaskType, inputSize int64) *BucketStats {
+	return s.costModel.EstimateCost(taskType, inputSize)
+}
+
+// RecordTaskCost records actual cost for a task
+func (s *Scheduler) RecordTaskCost(taskType api.TaskType, inputSize int64, runtimeMs int64, memoryMB int64, gpuUtil float64) {
+	s.costModel.RecordCost(taskType, inputSize, runtimeMs, memoryMB, gpuUtil)
 }

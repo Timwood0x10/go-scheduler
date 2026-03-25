@@ -32,11 +32,11 @@ func DefaultRetryPolicy() *RetryPolicy {
 
 // TaskError represents a task execution error
 type TaskError struct {
-	TaskID      string
-	Err         error
-	Retriable   bool
-	RetryCount  int
-	Timestamp   time.Time
+	TaskID     string
+	Err        error
+	Retriable  bool
+	RetryCount int
+	Timestamp  time.Time
 }
 
 func (e *TaskError) Error() string {
@@ -72,9 +72,9 @@ func NonRetryableError(taskID string, err error) *TaskError {
 
 // RetryExecutor wraps a TaskExecutor with retry logic
 type RetryExecutor struct {
-	executor    TaskExecutor
-	policy      *RetryPolicy
-	maxRetries  int
+	executor   TaskExecutor
+	policy     *RetryPolicy
+	maxRetries int
 }
 
 // NewRetryExecutor creates a new retry executor
@@ -175,10 +175,10 @@ func mathPow(base, exp float64) float64 {
 
 // ErrorHandler handles task errors
 type ErrorHandler struct {
-	mu           sync.RWMutex
-	errorLog     []*TaskError
-	maxLogSize   int
-	onError      func(*TaskError)
+	mu         sync.RWMutex
+	errorLog   []*TaskError
+	maxLogSize int
+	onError    func(*TaskError)
 }
 
 // NewErrorHandler creates a new error handler

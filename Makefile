@@ -36,8 +36,13 @@ lint:
 	@echo "Running golint..."
 	@~/go/bin/golint ./...
 
+# Static check with golangci-lint
+golangci:
+	@echo "Running golangci-lint..."
+	@golangci-lint run ./...
+
 # Static check (vet + lint)
-static: vet lint
+static: vet lint golangci
 
 # Clean build artifacts
 clean:
@@ -78,7 +83,7 @@ help:
 	@echo "  vet          - Run go vet"
 	@echo "  fmt          - Format code with gofmt"
 	@echo "  lint         - Run golint"
-	@echo "  static       - Run static analysis (vet + lint)"
+	@echo "  static       - Run static analysis (vet + lint + golangci-lint)"
 	@echo "  clean        - Clean build artifacts"
 	@echo "  install      - Install dependencies"
 	@echo "  run          - Run the scheduler"

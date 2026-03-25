@@ -19,25 +19,25 @@ import (
 
 // Metrics holds system metrics
 type Metrics struct {
-	Timestamp     int64   `json:"timestamp"`
-	QueueSize     int     `json:"queue_size"`
-	RunningTasks  int     `json:"running_tasks"`
-	CompletedTasks int64   `json:"completed_tasks"`
-	FailedTasks   int64   `json:"failed_tasks"`
-	RejectedTasks int64   `json:"rejected_tasks"`
-	GPUMetrics    string  `json:"gpu_metrics"`
+	Timestamp      int64  `json:"timestamp"`
+	QueueSize      int    `json:"queue_size"`
+	RunningTasks   int    `json:"running_tasks"`
+	CompletedTasks int64  `json:"completed_tasks"`
+	FailedTasks    int64  `json:"failed_tasks"`
+	RejectedTasks  int64  `json:"rejected_tasks"`
+	GPUMetrics     string `json:"gpu_metrics"`
 }
 
 // Monitor monitors the scheduler and exposes metrics
 type Monitor struct {
 	scheduler *scheduler.Scheduler
-	gpuPool    *gpu.Pool
+	gpuPool   *gpu.Pool
 	collector *gpu.Collector
 	taskQueue *queue.TaskQueue
 
 	// Metrics
-	mu              sync.RWMutex
-	completedTasks  int64
+	mu             sync.RWMutex
+	completedTasks int64
 	failedTasks    int64
 	rejectedTasks  int64
 
@@ -48,10 +48,10 @@ type Monitor struct {
 // NewMonitor creates a new monitor
 func NewMonitor(sched *scheduler.Scheduler, gpuPool *gpu.Pool, collector *gpu.Collector, taskQueue *queue.TaskQueue) *Monitor {
 	return &Monitor{
-		scheduler:   sched,
-		gpuPool:     gpuPool,
-		collector:   collector,
-		taskQueue:   taskQueue,
+		scheduler: sched,
+		gpuPool:   gpuPool,
+		collector: collector,
+		taskQueue: taskQueue,
 	}
 }
 

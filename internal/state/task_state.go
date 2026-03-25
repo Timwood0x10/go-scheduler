@@ -9,13 +9,13 @@ import (
 
 // TaskState represents the state of a task
 type TaskState struct {
-	TaskID       string
-	CurrentState api.TaskStatus
+	TaskID        string
+	CurrentState  api.TaskStatus
 	PreviousState api.TaskStatus
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 	// State history for debugging
-	History     []Record
+	History []Record
 }
 
 // Record represents a state transition record
