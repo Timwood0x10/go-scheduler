@@ -1,10 +1,10 @@
+// Package executor provides task execution functionality with async execution.
+// All task executions must be asynchronous to avoid blocking the scheduler.
 package executor
 
 import (
 	"context"
-	"encoding/json"
 	"log"
-	"sync"
 	"time"
 
 	"algogpu/api"
@@ -12,254 +12,112 @@ import (
 	"algogpu/pkg/types"
 )
 
-// TaskExecutor defines the interface for executing GPU tasks
-type TaskExecutor interface {
-	// Execute runs a task and returns the result
-	Execute(ctx context.Context, task *types.Task, gpuInfo *gpu.GPU) (*TaskResult, error)
-
-	// Type returns the task type this executor handles
-	Type() api.TaskType
-
-	// Close releases resources
-	Close() error
+// Runner executes GPU tasks asynchronously.
+// It ensures GPU resources are released after execution.
+type Runner struct {
+	gpuPool *gpu.Pool
+	ctx     context.Context
 }
 
-// TaskResult represents the result of a task execution
-type TaskResult struct {
-	TaskID    string
-	Status    api.TaskStatus
-	Output    []byte
-	Error     string
-	Duration  time.Duration
-	StartTime time.Time
-	EndTime   time.Time
-	GPUUsed   int64 // MB
-}
-
-// TaskRunner manages task execution
-type TaskRunner struct {
-	executors  map[api.TaskType]TaskExecutor
-	gpuPool    *gpu.Pool
-	resultChan chan *TaskResult
-	wg         sync.WaitGroup
-	ctx        context.Context
-	cancel     context.CancelFunc
-}
-
-// NewTaskRunner creates a new TaskRunner
-func NewTaskRunner(gpuPool *gpu.Pool) *TaskRunner {
-	ctx, cancel := context.WithCancel(context.Background())
-	return &TaskRunner{
-		executors:  make(map[api.TaskType]TaskExecutor),
-		gpuPool:    gpuPool,
-		resultChan: make(chan *TaskResult, 100),
-		ctx:        ctx,
-		cancel:     cancel,
+// NewRunner creates a new task executor.
+func NewRunner(gpuPool *gpu.Pool) *Runner {
+	return &Runner{
+		gpuPool: gpuPool,
+		ctx:     context.Background(),
 	}
 }
 
-// RegisterExecutor registers a task executor
-func (r *TaskRunner) RegisterExecutor(executor TaskExecutor) {
-	r.executors[executor.Type()] = executor
-	log.Printf("Registered executor for task type: %v", executor.Type())
-}
-
-// RunTask executes a task on the specified GPU
-func (r *TaskRunner) RunTask(task *types.Task, gpuInfo *gpu.GPU) {
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
-
-		result := &TaskResult{
-			TaskID:    task.ID,
-			StartTime: time.Now(),
-			GPUUsed:   task.GPUMemoryRequired,
+// Run executes a task asynchronously on the specified GPU.
+// This method must be called with `go r.Run(task, gpu)` to avoid blocking the scheduler.
+// The GPU is released automatically after execution completes (success or failure).
+func (r *Runner) Run(task *types.Task, gpu *gpu.GPU) {
+	// Ensure GPU is released even if execution fails
+	defer func() {
+		if err := r.gpuPool.Release(gpu); err != nil {
+			log.Printf("Failed to release GPU %d: %v", gpu.ID, err)
 		}
-
-		executor, ok := r.executors[task.Type]
-		if !ok {
-			result.Status = api.TaskStatus_TASK_STATUS_FAILED
-			result.Error = "no executor for task type: " + task.Type.String()
-			result.EndTime = time.Now()
-			result.Duration = result.EndTime.Sub(result.StartTime)
-			r.resultChan <- result
-			return
-		}
-
-		// Execute the task
-		taskResult, err := executor.Execute(r.ctx, task, gpuInfo)
-		if err != nil {
-			result.Status = api.TaskStatus_TASK_STATUS_FAILED
-			result.Error = err.Error()
-		} else if taskResult != nil {
-			result.Output = taskResult.Output
-			result.Status = taskResult.Status
-		}
-
-		result.EndTime = time.Now()
-		result.Duration = result.EndTime.Sub(result.StartTime)
-
-		// Free GPU memory
-		gpuInfo.Free(task.ID, task.GPUMemoryRequired)
-
-		r.resultChan <- result
 	}()
-}
 
-// ResultChan returns the result channel
-func (r *TaskRunner) ResultChan() <-chan *TaskResult {
-	return r.resultChan
-}
+	startTime := time.Now()
 
-// Stop stops the task runner
-func (r *TaskRunner) Stop() {
-	r.cancel()
-	r.wg.Wait()
-	close(r.resultChan)
-}
+	// Execute task based on type
+	err := r.executeTask(task, gpu)
 
-// Close closes all executors
-func (r *TaskRunner) Close() error {
-	for _, executor := range r.executors {
-		if err := executor.Close(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+	duration := time.Since(startTime)
 
-// DefaultExecutors returns default set of executors
-func DefaultExecutors() []TaskExecutor {
-	return []TaskExecutor{
-		NewEmbeddingExecutor(),
-		NewLLMExecutor(),
-		NewDiffusionExecutor(),
-		NewGenericExecutor(),
-	}
-}
-
-// embeddingExecutor executes embedding tasks
-type embeddingExecutor struct{}
-
-// NewEmbeddingExecutor creates a new embedding executor
-func NewEmbeddingExecutor() TaskExecutor {
-	return &embeddingExecutor{}
-}
-
-func (e *embeddingExecutor) Type() api.TaskType {
-	return api.TaskType_TASK_TYPE_EMBEDDING
-}
-
-func (e *embeddingExecutor) Execute(ctx context.Context, task *types.Task, gpuInfo *gpu.GPU) (*TaskResult, error) {
-	// Simulate embedding task execution
-	time.Sleep(20 * time.Millisecond)
-
-	log.Printf("Embedding task %s executed on GPU %d", task.ID, gpuInfo.ID)
-
-	return &TaskResult{
-		TaskID:   task.ID,
-		Status:   api.TaskStatus_TASK_STATUS_COMPLETED,
-		Output:   []byte(`{"embedding": [0.1, 0.2, 0.3]}`),
-		Duration: 20 * time.Millisecond,
-	}, nil
-}
-
-func (e *embeddingExecutor) Close() error {
-	return nil
-}
-
-// llmExecutor executes LLM inference tasks
-type llmExecutor struct{}
-
-// NewLLMExecutor creates a new LLM executor
-func NewLLMExecutor() TaskExecutor {
-	return &llmExecutor{}
-}
-
-func (e *llmExecutor) Type() api.TaskType {
-	return api.TaskType_TASK_TYPE_LLM
-}
-
-func (e *llmExecutor) Execute(ctx context.Context, task *types.Task, gpuInfo *gpu.GPU) (*TaskResult, error) {
-	// Simulate LLM inference
-	time.Sleep(100 * time.Millisecond)
-
-	log.Printf("LLM task %s executed on GPU %d", task.ID, gpuInfo.ID)
-
-	// Parse payload to get prompt
-	var payload map[string]interface{}
-	if len(task.Payload) > 0 {
-		_ = json.Unmarshal(task.Payload, &payload)
+	// Update task status based on execution result
+	if err != nil {
+		log.Printf("Task %s failed on GPU %d: %v (duration: %v)", task.ID, gpu.ID, err, duration)
+		task.Status = api.TaskStatus_TASK_STATUS_FAILED
+		task.Message = err.Error()
+	} else {
+		log.Printf("Task %s completed on GPU %d (duration: %v)", task.ID, gpu.ID, duration)
+		task.Status = api.TaskStatus_TASK_STATUS_COMPLETED
+		task.Message = "Task completed successfully"
 	}
 
-	return &TaskResult{
-		TaskID:   task.ID,
-		Status:   api.TaskStatus_TASK_STATUS_COMPLETED,
-		Output:   []byte(`{"text": "generated response"}`),
-		Duration: 100 * time.Millisecond,
-	}, nil
+	task.CompletedAt = time.Now()
 }
 
-func (e *llmExecutor) Close() error {
-	return nil
+// executeTask executes a task based on its type.
+// This is a simplified implementation for demonstration.
+// In production, this would call actual GPU kernels or container runtimes.
+func (r *Runner) executeTask(task *types.Task, gpu *gpu.GPU) error {
+	ctx, cancel := context.WithTimeout(r.ctx, 30*time.Minute)
+	defer cancel()
+
+	switch task.Type {
+	case api.TaskType_TASK_TYPE_EMBEDDING:
+		return r.runEmbeddingTask(ctx, task, gpu)
+	case api.TaskType_TASK_TYPE_LLM:
+		return r.runLLMTask(ctx, task, gpu)
+	case api.TaskType_TASK_TYPE_DIFFUSION:
+		return r.runDiffusionTask(ctx, task, gpu)
+	default:
+		return r.runGenericTask(ctx, task, gpu)
+	}
 }
 
-// diffusionExecutor executes diffusion tasks
-type diffusionExecutor struct{}
-
-// NewDiffusionExecutor creates a new diffusion executor
-func NewDiffusionExecutor() TaskExecutor {
-	return &diffusionExecutor{}
+// runEmbeddingTask simulates an embedding task execution.
+func (r *Runner) runEmbeddingTask(ctx context.Context, task *types.Task, gpu *gpu.GPU) error {
+	// Simulate embedding computation time
+	select {
+	case <-time.After(20 * time.Millisecond):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
-func (e *diffusionExecutor) Type() api.TaskType {
-	return api.TaskType_TASK_TYPE_DIFFUSION
+// runLLMTask simulates an LLM inference task execution.
+func (r *Runner) runLLMTask(ctx context.Context, task *types.Task, gpu *gpu.GPU) error {
+	// Simulate LLM inference time
+	select {
+	case <-time.After(100 * time.Millisecond):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
-func (e *diffusionExecutor) Execute(ctx context.Context, task *types.Task, gpuInfo *gpu.GPU) (*TaskResult, error) {
-	// Simulate diffusion task
-	time.Sleep(500 * time.Millisecond)
-
-	log.Printf("Diffusion task %s executed on GPU %d", task.ID, gpuInfo.ID)
-
-	return &TaskResult{
-		TaskID:   task.ID,
-		Status:   api.TaskStatus_TASK_STATUS_COMPLETED,
-		Output:   []byte(`{"image": "base64 encoded image"}`),
-		Duration: 500 * time.Millisecond,
-	}, nil
+// runDiffusionTask simulates a diffusion model task execution.
+func (r *Runner) runDiffusionTask(ctx context.Context, task *types.Task, gpu *gpu.GPU) error {
+	// Simulate diffusion model generation time
+	select {
+	case <-time.After(500 * time.Millisecond):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
-func (e *diffusionExecutor) Close() error {
-	return nil
-}
-
-// genericExecutor executes generic GPU tasks
-type genericExecutor struct{}
-
-// NewGenericExecutor creates a new generic executor
-func NewGenericExecutor() TaskExecutor {
-	return &genericExecutor{}
-}
-
-func (e *genericExecutor) Type() api.TaskType {
-	return api.TaskType_TASK_TYPE_OTHER
-}
-
-func (e *genericExecutor) Execute(ctx context.Context, task *types.Task, gpuInfo *gpu.GPU) (*TaskResult, error) {
-	// Generic task execution
-	time.Sleep(50 * time.Millisecond)
-
-	log.Printf("Generic task %s executed on GPU %d", task.ID, gpuInfo.ID)
-
-	return &TaskResult{
-		TaskID:   task.ID,
-		Status:   api.TaskStatus_TASK_STATUS_COMPLETED,
-		Output:   []byte(`{"result": "ok"}`),
-		Duration: 50 * time.Millisecond,
-	}, nil
-}
-
-func (e *genericExecutor) Close() error {
-	return nil
+// runGenericTask simulates a generic GPU task execution.
+func (r *Runner) runGenericTask(ctx context.Context, task *types.Task, gpu *gpu.GPU) error {
+	// Simulate generic task execution time
+	select {
+	case <-time.After(50 * time.Millisecond):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

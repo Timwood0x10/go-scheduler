@@ -1,68 +1,74 @@
+// Package scheduler provides the core GPU scheduling logic with a simple, deterministic loop.
+// The scheduler follows the principle of "大道至简" - simple, predictable, and reliable.
 package scheduler
 
 import (
+	"context"
 	"log"
 	"sync"
 	"time"
 
 	"algogpu/api"
+	"algogpu/internal/executor"
 	"algogpu/internal/gpu"
 	"algogpu/internal/queue"
 	"algogpu/pkg/types"
 )
 
-// Scheduler is the main GPU scheduler
+// Scheduler is the main GPU scheduler with a simple, deterministic loop.
+// This is the core of the system - keep it minimal and focused.
 type Scheduler struct {
 	cfg       *Config
 	taskQueue *queue.TaskQueue
 	gpuPool   *gpu.Pool
+	executor  *executor.Runner
 
-	// Scheduling components
-	admission    *AdmissionControl
-	tokenBucket  *TokenBucketManager
-	costAware    *CostAwareScheduler
-	usageTracker *UsageTracker
-	gpuPacking   *GPUPackingStrategy
-	taskAging    *TaskAging
-	costModel    *CostModel
+	// Scheduling components (simplified to 3 core strategies)
+	admission   *AdmissionControl
+	tokenBucket *TokenBucketManager
+	gpuPacking  *GPUPackingStrategy
+	taskAging   *TaskAging
 
 	// Scheduler state
-	mu              sync.RWMutex
-	running         bool
-	schedulerLoopCh chan struct{}
+	mu        sync.RWMutex
+	running   bool
+	queueChan chan *types.Task
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
 }
 
-// NewScheduler creates a new Scheduler
+// NewScheduler creates a new Scheduler with minimal configuration.
 func NewScheduler(cfg *Config, taskQueue *queue.TaskQueue, gpuPool *gpu.Pool) *Scheduler {
-	usageTracker := NewUsageTracker(cfg.UsageWindowMinutes)
-	costModel := NewCostModel()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Scheduler{
 		cfg:       cfg,
 		taskQueue: taskQueue,
 		gpuPool:   gpuPool,
+		executor:  executor.NewRunner(gpuPool),
 
-		admission:    NewAdmissionControl(cfg.MaxQueueSize, taskQueue),
-		tokenBucket:  NewTokenBucketManager(cfg),
-		costAware:    NewCostAwareScheduler(usageTracker),
-		usageTracker: usageTracker,
-		gpuPacking:   NewGPUPackingStrategy(gpuPool, cfg),
-		taskAging:    NewTaskAging(cfg.AgingFactor),
-		costModel:    costModel,
+		admission:   NewAdmissionControl(cfg.MaxQueueSize, taskQueue),
+		tokenBucket: NewTokenBucketManager(cfg),
+		gpuPacking:  NewGPUPackingStrategy(gpuPool, cfg),
+		taskAging:   NewTaskAging(cfg.AgingFactor),
 
-		running:         false,
-		schedulerLoopCh: make(chan struct{}, 1),
+		running:   false,
+		queueChan: make(chan *types.Task, 1000),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
-// SubmitTask submits a task with all scheduling checks
+// SubmitTask submits a task with all scheduling checks.
+// Returns whether accepted, message, and task status.
 func (s *Scheduler) SubmitTask(task *types.Task) (bool, string, api.TaskStatus) {
-	// 1. Admission Control
+	// 1. Admission Control (queue capacity check)
 	if err := s.admission.Check(); err != nil {
 		return false, err.Error(), api.TaskStatus_TASK_STATUS_REJECTED
 	}
 
-	// 2. Token Bucket check
+	// 2. Token Bucket check (user-level rate limiting)
 	if err := s.tokenBucket.CheckAndConsume(task.UserID, task.Type); err != nil {
 		return false, err.Error(), api.TaskStatus_TASK_STATUS_REJECTED
 	}
@@ -72,67 +78,137 @@ func (s *Scheduler) SubmitTask(task *types.Task) (bool, string, api.TaskStatus) 
 		return false, err.Error(), api.TaskStatus_TASK_STATUS_REJECTED
 	}
 
-	// Trigger scheduler
-	s.triggerScheduler()
+	// Send to scheduler channel for processing
+	select {
+	case s.queueChan <- task:
+	default:
+		log.Printf("Scheduler channel full, task %s will be processed by loop", task.ID)
+	}
 
 	return true, "Task accepted", api.TaskStatus_TASK_STATUS_PENDING
 }
 
-// DispatchNext dispatches the next task if possible
-func (s *Scheduler) DispatchNext() *types.Task {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// Loop is the core scheduling loop - the soul of this project.
+// It implements a simple, deterministic scheduling logic:
+// 1. Get task from channel (non-blocking with timeout)
+// 2. Check token bucket for rate limiting
+// 3. Find best GPU using packing strategy
+// 4. Execute task asynchronously
+func (s *Scheduler) Loop() {
+	s.wg.Add(1)
+	defer s.wg.Done()
 
-	// Get all pending tasks
-	pendingTasks := s.taskQueue.GetAllPending()
-	if len(pendingTasks) == 0 {
-		return nil
-	}
+	log.Println("Scheduler loop started")
 
-	// Calculate priorities with cost-aware scheduling
-	tasksWithPriority := SortByPriority(pendingTasks, s.costAware)
+	for {
+		select {
+		case <-s.ctx.Done():
+			log.Println("Scheduler loop stopped")
+			return
 
-	// Apply aging
-	tasksWithPriority = s.taskAging.ApplyAging(tasksWithPriority, pendingTasks)
+		case task := <-s.queueChan:
+			if task == nil {
+				continue
+			}
+			s.processTask(task)
 
-	// Try to dispatch tasks in priority order
-	for _, twp := range tasksWithPriority {
-		task := twp.Task
-
-		// Check GPU availability
-		gpu, err := s.gpuPacking.FindBestGPU(task)
-		if err != nil {
-			continue // try next task
+		case <-time.After(10 * time.Millisecond):
+			// Periodic check for tasks that might have been skipped
+			s.processNextTask()
 		}
-
-		// Allocate GPU
-		if err := gpu.Allocate(task.ID, task.GPUMemoryRequired); err != nil {
-			log.Printf("Failed to allocate GPU %d for task %s: %v", gpu.ID, task.ID, err)
-			continue
-		}
-
-		// Update task status to running
-		if err := s.taskQueue.UpdateStatus(task.ID, api.TaskStatus_TASK_STATUS_RUNNING); err != nil {
-			log.Printf("Failed to update task status: %v", err)
-		}
-
-		log.Printf("Dispatched task %s to GPU %d", task.ID, gpu.ID)
-
-		return task
-	}
-
-	return nil
-}
-
-// triggerScheduler triggers a scheduling cycle
-func (s *Scheduler) triggerScheduler() {
-	select {
-	case s.schedulerLoopCh <- struct{}{}:
-	default:
 	}
 }
 
-// Start starts the scheduler loop
+// processTask processes a single task through the scheduling pipeline.
+func (s *Scheduler) processTask(task *types.Task) {
+	// User rate limiting (Token Bucket)
+	if !s.tokenBucket.Allow(task.UserID) {
+		// Requeue with backoff
+		time.Sleep(20 * time.Millisecond)
+		s.requeueTask(task)
+		return
+	}
+
+	// GPU Packing (Best Fit strategy)
+	gpu, err := s.gpuPacking.FindBestGPU(task)
+	if err != nil || gpu == nil {
+		// No GPU available, requeue
+		time.Sleep(50 * time.Millisecond)
+		s.requeueTask(task)
+		return
+	}
+
+	// Allocate GPU
+	if err := gpu.Allocate(task.ID, task.GPUMemoryRequired); err != nil {
+		log.Printf("Failed to allocate GPU %d for task %s: %v", gpu.ID, task.ID, err)
+		s.requeueTask(task)
+		return
+	}
+
+	// Update task status to running
+	if err := s.taskQueue.UpdateStatus(task.ID, api.TaskStatus_TASK_STATUS_RUNNING); err != nil {
+		log.Printf("Failed to update task status: %v", err)
+		s.gpuPool.Release(gpu)
+		return
+	}
+
+	log.Printf("Dispatched task %s to GPU %d", task.ID, gpu.ID)
+
+	// Execute task asynchronously (must be async to avoid blocking scheduler)
+	go s.executor.Run(task, gpu)
+}
+
+// processNextTask processes the next task from the queue.
+// This is called periodically to ensure no tasks are stuck.
+func (s *Scheduler) processNextTask() {
+	// Dequeue the highest priority task from the heap
+	task := s.taskQueue.Dequeue()
+	if task == nil {
+		return
+	}
+
+	// Check token bucket
+	if !s.tokenBucket.Allow(task.UserID) {
+		// Requeue with backoff
+		s.requeueTask(task)
+		return
+	}
+
+	// Find best GPU
+	gpu, err := s.gpuPacking.FindBestGPU(task)
+	if err != nil || gpu == nil {
+		// Requeue with backoff
+		s.requeueTask(task)
+		return
+	}
+
+	// Allocate and execute
+	if err := gpu.Allocate(task.ID, task.GPUMemoryRequired); err != nil {
+		log.Printf("Failed to allocate GPU %d for task %s: %v", gpu.ID, task.ID, err)
+		s.requeueTask(task)
+		return
+	}
+
+	if err := s.taskQueue.UpdateStatus(task.ID, api.TaskStatus_TASK_STATUS_RUNNING); err != nil {
+		log.Printf("Failed to update task status: %v", err)
+		s.gpuPool.Release(gpu)
+		return
+	}
+
+	log.Printf("Dispatched task %s to GPU %d", task.ID, gpu.ID)
+
+	// Execute asynchronously
+	go s.executor.Run(task, gpu)
+}
+
+// requeueTask requeues a task for later processing.
+func (s *Scheduler) requeueTask(task *types.Task) {
+	if err := s.taskQueue.Requeue(task); err != nil {
+		log.Printf("Failed to requeue task %s: %v", task.ID, err)
+	}
+}
+
+// Start starts the scheduler loop.
 func (s *Scheduler) Start() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -142,12 +218,12 @@ func (s *Scheduler) Start() {
 	}
 
 	s.running = true
-	go s.runSchedulerLoop()
+	go s.Loop()
 
 	log.Println("Scheduler started")
 }
 
-// Stop stops the scheduler loop
+// Stop stops the scheduler loop gracefully.
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -157,30 +233,15 @@ func (s *Scheduler) Stop() {
 	}
 
 	s.running = false
-	close(s.schedulerLoopCh)
+	s.cancel()
+
+	// Wait for loop to finish
+	s.wg.Wait()
 
 	log.Println("Scheduler stopped")
 }
 
-// runSchedulerLoop runs the main scheduler loop
-func (s *Scheduler) runSchedulerLoop() {
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-s.schedulerLoopCh:
-			s.DispatchNext()
-		case <-ticker.C:
-			s.DispatchNext()
-		case <-time.After(10 * time.Second):
-			// Periodic full scan
-			s.DispatchNext()
-		}
-	}
-}
-
-// GetSchedulerStatus returns scheduler status
+// GetSchedulerStatus returns scheduler status.
 func (s *Scheduler) GetSchedulerStatus() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -192,33 +253,19 @@ func (s *Scheduler) GetSchedulerStatus() map[string]interface{} {
 	}
 }
 
-// RecordUsage records GPU usage for a task
-func (s *Scheduler) RecordUsage(userID string, taskType api.TaskType) {
-	cost := types.GetTaskCost(taskType)
-	s.usageTracker.AddUsage(userID, cost)
-}
-
-// GetGPUPool returns the GPU pool
+// GetGPUPool returns the GPU pool.
 func (s *Scheduler) GetGPUPool() *gpu.Pool {
 	return s.gpuPool
 }
 
-// GetTaskQueue returns the task queue
+// GetTaskQueue returns the task queue.
 func (s *Scheduler) GetTaskQueue() *queue.TaskQueue {
 	return s.taskQueue
 }
 
-// GetCostModel returns the cost model
-func (s *Scheduler) GetCostModel() *CostModel {
-	return s.costModel
-}
-
-// EstimateTaskCost estimates GPU cost for a task
-func (s *Scheduler) EstimateTaskCost(taskType api.TaskType, inputSize int64) *BucketStats {
-	return s.costModel.EstimateCost(taskType, inputSize)
-}
-
-// RecordTaskCost records actual cost for a task
-func (s *Scheduler) RecordTaskCost(taskType api.TaskType, inputSize int64, runtimeMs int64, memoryMB int64, gpuUtil float64) {
-	s.costModel.RecordCost(taskType, inputSize, runtimeMs, memoryMB, gpuUtil)
+// IsRunning returns whether the scheduler is running.
+func (s *Scheduler) IsRunning() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.running
 }

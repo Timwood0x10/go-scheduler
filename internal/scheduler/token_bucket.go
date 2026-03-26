@@ -152,6 +152,18 @@ func (m *TokenBucketManager) GetTokenBalance(userID string) (current, dailyUsed,
 	return bucket.Tokens, bucket.DailyUsed, bucket.DailyLimit
 }
 
+// Allow checks if a user has sufficient tokens for a task (without consuming).
+// Returns true if user has tokens available, false otherwise.
+func (m *TokenBucketManager) Allow(userID string) bool {
+	bucket := m.getOrCreateUser(userID)
+	bucket.Refill()
+
+	bucket.mu.RLock()
+	defer bucket.mu.RUnlock()
+
+	return bucket.Tokens > 0
+}
+
 // ResetDailyUsage resets daily usage for all users (call at midnight)
 func (m *TokenBucketManager) ResetDailyUsage() {
 	m.mu.Lock()
