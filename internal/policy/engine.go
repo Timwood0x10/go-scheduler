@@ -6,6 +6,7 @@ import (
 	"context"
 	"log"
 
+	"algogpu/internal/db"
 	"algogpu/internal/predictor"
 	"algogpu/pkg/types"
 )
@@ -14,13 +15,15 @@ import (
 type Engine struct {
 	predictor *predictor.ResourcePredictor
 	rules     *Rules
+	store     *db.Store
 }
 
 // NewEngine creates a new policy engine.
-func NewEngine(predictor *predictor.ResourcePredictor) *Engine {
+func NewEngine(predictor *predictor.ResourcePredictor, store *db.Store) *Engine {
 	return &Engine{
 		predictor: predictor,
 		rules:     NewRules(),
+		store:     store,
 	}
 }
 
@@ -46,14 +49,14 @@ func (e *Engine) EvaluateTask(ctx context.Context, task *types.Task, queueSize i
 
 	// Build decision
 	decision := &types.PolicyDecision{
-		EstimatedDuration:   prediction.EstimatedDurationMs,
-		EstimatedMemoryMB:   prediction.EstimatedMemoryMB,
-		AllowPacking:        prediction.AllowPacking,
+		EstimatedDuration:    prediction.EstimatedDurationMs,
+		EstimatedMemoryMB:    int(prediction.EstimatedMemoryMB),
+		AllowPacking:         prediction.AllowPacking,
 		EstimatedQueueWaitMs: predictedQueueWait,
 	}
 
 	// Apply policy rules to adjust priority
-	decision.Priority = e.rules.ApplyRules(task, prediction, queueSize)
+	decision.Priority = int(e.rules.ApplyRules(task, prediction, queueSize))
 
 	return decision, nil
 }
@@ -66,9 +69,8 @@ func (e *Engine) EvaluateTaskWithMetadata(ctx context.Context, task *types.Task,
 }
 
 // GetTaskTypeStats retrieves statistics for a specific task type.
-func (e *Engine) GetTaskTypeStats(ctx context.Context, taskType string) (*predictor.TaskStats, error) {
-	canonicalType := predictor.GetTaskTypeName(taskType)
-	return e.predictor.Predict(ctx, canonicalType), nil
+func (e *Engine) GetTaskTypeStats(ctx context.Context, taskType string) (*db.TaskStats, error) {
+	return e.store.GetTaskTypeStats(ctx, taskType)
 }
 
 // RefreshCache refreshes the predictor cache.

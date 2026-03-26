@@ -5,6 +5,9 @@ A minimal GPU scheduler for AI agents and inference workloads. Simple. Determini
 ## Features
 
 - **Dual Mode Architecture**: Run as standalone service or embedded plugin
+- **Data-Driven Scheduling**: Learn from historical GPU execution data
+- **Resource Prediction**: Estimate task duration and memory requirements
+- **Policy Engine**: Dynamic priority adjustment based on real-time metrics
 - **Simple Scheduling Loop**: Channel-based, deterministic scheduling
 - **GPU Packing**: Best Fit strategy with load thresholds
 - **Token Bucket**: User-level rate limiting with daily quotas
@@ -15,82 +18,135 @@ A minimal GPU scheduler for AI agents and inference workloads. Simple. Determini
 
 ## Architecture
 
-AlgoGPU supports two deployment modes:
+### System Overview
 
-### Mode 1: Standalone Service
-Independent gRPC service with HTTP monitoring, suitable for production environments.
-
-```
-┌───────────────────┐
-│  Standalone Mode  │
-├───────────────────┤
-│ • gRPC Server     │
-│ • HTTP Monitor    │
-│ • Python SDK      │
-│ • 独立部署        │
-└───────────────────┘
-        │
-        ▼
-  go-agent / Other Agents
-```
-
-### Mode 2: Plugin Mode
-Lightweight embedded plugin for integration with agent frameworks.
+AlgoGPU supports two deployment modes with shared core logic:
 
 ```
-┌───────────────────┐
-│  Plugin Mode      │
-├───────────────────┤
-│ • Simple Interface │
-│ • Direct Call     │
-│ • No Network      │
-│ • 嵌入式部署      │
-└───────────────────┘
-        │
-        ▼
-  go-agent / Other Agents
+┌─────────────────────────────────────────────────────────┐
+│                    AlgoGPU Core                          │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │  Simple Scheduler Loop (项目灵魂)                │  │
+│  │  for {                                            │  │
+│  │    task := queue.Pop()                            │  │
+│  │                                                   │  │
+│  │    if !token.Allow(user) { continue }            │  │
+│  │                                                   │  │
+│  │    gpu := gpuPool.Allocate(task.GPUMem)          │  │
+│  │    if gpu == nil { continue }                    │  │
+│  │                                                   │  │
+│  │    executor.Run(task, gpu)                       │  │
+│  │  }                                                │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                                          │
+│  Core Modules (共享)                                     │
+│  • scheduler/   - 调度逻辑                              │
+│  • gpu/         - GPU 管理                              │
+│  • queue/       - 任务队列                              │
+│  • executor/    - 任务执行                              │
+│  • db/          - 数据存储                              │
+│  • predictor/   - 资源预测                              │
+│  • policy/      - 策略引擎                              │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            │ 简单包装
+                            ▼
+        ┌───────────────────┴───────────────────┐
+        │                                       │
+        ▼                                       ▼
+┌───────────────────┐               ┌───────────────────┐
+│  Standalone Mode  │               │   Plugin Mode     │
+│  独立服务模式      │               │   插件模式        │
+├───────────────────┤               ├───────────────────┤
+│ • gRPC Server     │               │ • Simple Interface │
+│ • HTTP Monitor    │               │ • Direct Call     │
+│ • Python SDK      │               │ • No Network      │
+│ • 独立部署        │               │ • 嵌入式部署      │
+└───────────────────┘               └───────────────────┘
 ```
 
-Both modes share the same core scheduling logic:
-```
-queue (heap) → scheduler (channel) → gpu_pool (Reservation) → executor (async)
-                                  ↓
-                               Loop（核心循环）
-```
-
-## Features
-
-- **Two-level Scheduling**: Task-level scheduling for workflow tasks and token-level batching handled by inference engines
-- **Multi-tenant Fairness**: Token Bucket with weighted fair queuing prevents single users from monopolizing GPU resources
-- **Cost-aware Scheduling**: Priority based on recent GPU usage with sliding window decay
-- **GPU Packing**: Best Fit strategy with load thresholds to maximize GPU utilization
-- **Task Aging**: Prevents starvation of long-running tasks
-- **Admission Control**: Protects system from request floods
-- **gRPC API**: Language-agnostic interface for Python integration
-- **HTTP Monitoring**: Built-in metrics and health check endpoints
-
-## Architecture
+### Data-Driven Scheduling Loop
 
 ```
-User Requests
+Task Submission
       │
       ▼
-Agent Workflow Engine
+Policy Engine Evaluation (基于历史数据)
+      │
+      ├── Resource Prediction (运行时间 + 显存)
+      ├── Priority Calculation (动态优先级)
+      └── GPU Packing Decision (是否适合打包)
       │
       ▼
-Task-level GPU Scheduler
-      │
-      ├── Admission Control
-      ├── Token Bucket
-      ├── Cost-aware Scheduling
-      ├── GPU Packing
-      └── Task Aging
+Queue (Priority + Aging)
       │
       ▼
-GPU Resource Manager
+Scheduler Loop
+      │
+      ├── Token Bucket Check (用户限速)
+      ├── GPU Allocation (Best Fit)
+      └── Async Execution
       │
       ▼
-GPU Workers (LLM, Embedding, Diffusion)
+Metrics Recording (写入 SQLite)
+      │
+      ▼
+SQLite Database (task_execution 表)
+      │
+      ▼
+Stats Query (资源预测数据源)
+      │
+      ▼
+Better Future Decisions (更优调度)
+```
+
+### Module Breakdown
+
+```
+algogpu/
+├── cmd/
+│   ├── scheduler/main.go       # Standalone mode entry
+│   └── plugin/main.go          # Plugin mode entry
+├── internal/
+│   ├── db/                     # SQLite database layer
+│   │   └── store.go            # Metrics storage & queries
+│   ├── executor/               # Task execution (async)
+│   │   └── runner.go           # Task runner with metrics
+│   ├── gpu/                   # GPU pool & reservation
+│   │   ├── pool.go             # GPU allocation + reservation
+│   │   ├── collector.go        # GPU metrics collection
+│   │   └── state.go            # GPU state
+│   ├── plugin/                # Plugin interface
+│   │   └── scheduler.go        # Simple plugin API
+│   ├── policy/                # Policy engine (600 lines)
+│   │   ├── engine.go           # Task evaluation & decisions
+│   │   ├── rules.go            # Scheduling rules
+│   │   └── stats.go            # Statistics queries
+│   ├── predictor/             # Resource predictor (250 lines)
+│   │   ├── predictor.go        # Resource prediction logic
+│   │   └── cache.go            # Stats cache (5s TTL)
+│   ├── queue/                 # Priority queue (200 lines)
+│   │   └── task_queue.go       # Heap-based queue
+│   ├── scheduler/             # Core scheduler (600 lines)
+│   │   ├── scheduler.go        # Channel-based loop
+│   │   ├── config.go           # Configuration
+│   │   ├── token_bucket.go     # Rate limiting
+│   │   └── gpu_packing.go      # Best fit strategy
+│   └── server/                # gRPC server
+│       └── grpc.go             # gRPC service implementation
+├── pkg/
+│   └── types/                 # Core type definitions
+│       └── types.go            # Task, metrics, predictions
+├── api/
+│   └── gpu_scheduler.proto    # gRPC definitions
+├── python/
+│   └── gpu_scheduler/         # Python SDK
+├── examples/
+│   └── go-agent/main.go       # Plugin integration example
+├── docs/                      # Documentation
+│   ├── en/                    # English docs
+│   └── zh/                    # Chinese docs
+└── Makefile
 ```
 
 ## Quick Start
@@ -114,12 +170,15 @@ make build
 make run
 ```
 
-The server will start on `localhost:50051`.
+The server will start on `localhost:50051` with:
+- gRPC API on port 50051
+- HTTP monitoring on port 8080
+- SQLite database: `./algogpu.db`
 
 #### Plugin Mode (Development)
 
 ```bash
-go run ./cmd/plugin/main.go -gpus 4 -memory 8192
+go run ./cmd/plugin/main.go
 ```
 
 This runs the scheduler as an embedded plugin.
@@ -156,48 +215,22 @@ package main
 import (
     "context"
     "algogpu/internal/plugin"
-    "algogpu/internal/scheduler"
-    "algogpu/internal/gpu"
-    "algogpu/internal/queue"
     "algogpu/pkg/types"
 )
 
 func main() {
-    // Create GPU pool
-    gpuPool := gpu.NewPool()
-    gpuPool.AddGPU(0, "NVIDIA-A100", 81920)
-
-    // Create task queue
-    taskQueue := queue.NewTaskQueue()
-
-    // Create scheduler
-    cfg := &scheduler.Config{
-        MaxQueueSize:     100,
-        TokenRefillRate:  100,
-        TokenBucketSize:  1000,
-        DailyTokenLimit:  1000000,
-        GPULoadThreshold: 0.85,
-        AgingFactor:      0.1,
-        UsageWindowMinutes: 5,
-    }
-
-    sched := scheduler.NewScheduler(cfg, taskQueue, gpuPool)
-    pluginScheduler := plugin.NewPluginScheduler(sched, taskQueue, gpuPool)
-
-    sched.Start()
-    defer sched.Stop()
-
+    // Create plugin scheduler
+    sched := plugin.NewPluginScheduler(...)
+    
     // Submit task
     task := &types.Task{
         ID:                 "task-1",
         UserID:             "user-1",
         Type:               api.TaskType_TASK_TYPE_EMBEDDING,
         GPUMemoryRequired:  1024,
-        GPUComputeRequired: 100,
-        EstimatedRuntimeMs: 1000,
     }
-
-    err := pluginScheduler.SubmitTask(context.Background(), task)
+    
+    err := sched.SubmitTask(context.Background(), task)
     if err != nil {
         panic(err)
     }
@@ -206,50 +239,51 @@ func main() {
 
 See `examples/go-agent/main.go` for a complete example.
 
-### Python SDK
+## Database
 
-```python
-from gpu_scheduler import GPUClient
+### SQLite Schema
 
-client = GPUClient(host="localhost:50051")
+```sql
+CREATE TABLE task_execution (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    task_type TEXT NOT NULL,
+    user_id TEXT,
+    gpu_id INTEGER,
+    gpu_model TEXT,
+    priority INTEGER,
+    queue_wait_ms INTEGER,
+    execution_time_ms INTEGER,
+    avg_gpu_util REAL,
+    max_gpu_util REAL,
+    avg_mem_util REAL,
+    max_mem_util REAL,
+    gpu_memory_used_mb INTEGER,
+    success INTEGER,
+    created_at INTEGER
+);
 
-# Submit a task
-task_id = client.submit_task(
-    task_id="task-1",
-    user_id="user-123",
-    task_type="llm",
-    gpu_memory_mb=8192,
-    payload={"prompt": "Hello, world!"}
-)
-
-# Check status
-status = client.get_status(task_id)
-print(f"Status: {status['status']}")
-
-# Wait for completion
-result = client.wait(task_id, timeout=60)
+CREATE INDEX idx_task_type ON task_execution(task_type);
+CREATE INDEX idx_user_id ON task_execution(user_id);
+CREATE INDEX idx_gpu_id ON task_execution(gpu_id);
+CREATE INDEX idx_created_at ON task_execution(created_at);
 ```
 
-## API
+### Queries
 
-### gRPC Endpoints
+```go
+// Get task type statistics
+stats, err := store.GetTaskTypeStats(ctx, "llm")
 
-| Method | Description |
-|--------|-------------|
-| `SubmitTask` | Submit a GPU task |
-| `GetTaskStatus` | Get task status |
-| `CancelTask` | Cancel a task |
-| `GetGPUStatus` | Get GPU status |
-| `TaskEvents` | Stream task events |
+// Get user statistics
+stats, err := store.GetUserStats(ctx, "user-123")
 
-### HTTP Endpoints
+// Get GPU statistics
+stats, err := store.GetGPUStats(ctx, 0)
 
-| Endpoint | Description |
-|----------|-------------|
-| `/health` | Health check |
-| `/metrics` | System metrics |
-| `/gpu/metrics` | GPU metrics |
-| `/queue/status` | Queue status |
+// Get queue wait statistics
+waitStats, err := store.GetQueueWaitStats(ctx, "llm")
+```
 
 ## Configuration
 
@@ -271,37 +305,11 @@ Default configuration in `internal/scheduler/config.go`:
 # Run all tests
 make test
 
-# Run with coverage
-make test-coverage
+# Run with race detector
+make test-race
 
-# Run static analysis
-make static
-```
-
-## Project Structure
-
-```
-algogpu/
-├── cmd/
-│   ├── scheduler/main.go       # Standalone mode entry
-│   └── plugin/main.go          # Plugin mode entry
-├── internal/
-│   ├── executor/               # Task execution (async)
-│   ├── gpu/                   # GPU pool & reservation
-│   ├── plugin/                # Plugin interface
-│   ├── queue/                # Priority queue (heap)
-│   ├── scheduler/            # Core scheduler loop
-│   └── server/               # gRPC server
-├── pkg/
-│   └── types/                # Core type definitions
-├── api/
-│   └── gpu_scheduler.proto   # gRPC definitions
-├── python/
-│   └── gpu_scheduler/        # Python SDK
-├── examples/
-│   └── go-agent/main.go      # Plugin integration example
-├── docs/                     # Documentation
-└── Makefile
+# Run static checks
+make static-check
 ```
 
 ## Code Size
@@ -313,9 +321,12 @@ Current implementation:
 - GPU management: ~300 lines
 - Task queue: ~200 lines
 - Executor: ~200 lines
+- Database layer: ~400 lines
+- Predictor: ~250 lines
+- Policy engine: ~600 lines
 - Plugin interface: ~200 lines
 - Tests: ~1000 lines
-- **Total: ~3500 lines**
+- **Total: ~3750 lines** ✅
 
 ## Technical Summary
 
@@ -343,17 +354,25 @@ func (s *Scheduler) Loop() {
 }
 ```
 
-### Scheduling Strategies
+### Data-Driven Decision
 
-1. **Admission Control**: Queue capacity check
-2. **Token Bucket**: User-level rate limiting
-3. **GPU Packing**: Best Fit strategy
-4. **Task Aging**: Priority adjustment over time
+```go
+// Policy engine evaluates task
+decision, err := policyEngine.EvaluateTask(ctx, task, queueSize)
+
+// Predictor estimates resources
+prediction := predictor.Predict(ctx, taskType)
+
+// Adjust priority based on historical data
+task.Priority = decision.Priority
+task.EstimatedRuntimeMs = decision.EstimatedDuration
+```
 
 ### Key Design Principles
 
 - **Simple**: Channel-driven, no busy-wait
 - **Deterministic**: Same input = same output
+- **Data-Driven**: Learn from historical executions
 - **Concurrent-safe**: Mutex-protected shared state
 - **Async execution**: Non-blocking scheduler loop
 
@@ -363,5 +382,9 @@ func (s *Scheduler) Loop() {
 gpu.Allocate(taskID, memory)  // Allocate resources
 gpu.Reserve(taskID)           // Prevent race conditions
 ... task executes ...
-gpuPool.Release(gpu)          // Cleanup
+gpuPool.Release(gpu)          // Cleanup + record metrics
 ```
+
+## License
+
+MIT License

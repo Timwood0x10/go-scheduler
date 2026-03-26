@@ -1,3 +1,4 @@
+// Package server provides gRPC server implementation.
 package server
 
 import (
@@ -37,7 +38,6 @@ func NewServer() *Server {
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer dbStore.Close()
 
 	// Add some dummy GPUs for testing
 	gpuPool.AddGPU(0, "NVIDIA GPU 0", 16384) // 16GB
@@ -58,7 +58,6 @@ func NewServer() *Server {
 		scheduler: sched,
 		collector: collector,
 		dbStore:   dbStore,
-	}
 	}
 }
 

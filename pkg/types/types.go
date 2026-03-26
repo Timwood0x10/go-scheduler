@@ -87,9 +87,9 @@ type ResourcePrediction struct {
 
 // PolicyDecision represents scheduling policy decision for a task.
 type PolicyDecision struct {
-	Priority            int
-	EstimatedDuration   int64
-	EstimatedMemoryMB   int
-	AllowPacking        bool
+	Priority             int
+	EstimatedDuration    int64
+	EstimatedMemoryMB    int
+	AllowPacking         bool
 	EstimatedQueueWaitMs int64
 }

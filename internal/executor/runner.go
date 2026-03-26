@@ -63,21 +63,52 @@ func (r *Runner) Run(task *types.Task, gpu *gpu.GPU) {
 	task.CompletedAt = time.Now()
 
 	// Record execution metrics to database
+
 	if r.dbStore != nil {
+
 		queueWait := task.StartedAt.Sub(task.CreatedAt)
-		metrics := &types.ExecutionMetrics{
-			ExecutionTimeMs:   duration.Milliseconds(),
-			AvgGPUUtil:        float64(gpu.ComputeUtil),
-			MaxGPUUtil:        float64(gpu.ComputeUtil),
-			AvgMemUtil:        float64(gpu.MemoryUtil),
-			MaxMemUtil:        float64(gpu.MemoryUtil),
-			GPUMemoryUsedMB:   gpu.MemoryUsed,
-			Success:           success,
+
+		// Create execution record
+
+		record := &db.TaskExecutionRecord{
+
+			TaskID: task.ID,
+
+			TaskType: task.Type.String(),
+
+			UserID: task.UserID,
+
+			GPUID: gpu.ID,
+
+			GPUModel: gpu.Name,
+
+			Priority: task.Priority,
+
+			QueueWaitMs: queueWait.Milliseconds(),
+
+			ExecutionTimeMs: duration.Milliseconds(),
+
+			AvgGPUUtil: metrics.AvgGPUUtil,
+
+			MaxGPUUtil: metrics.MaxGPUUtil,
+
+			AvgMemUtil: metrics.AvgMemUtil,
+
+			MaxMemUtil: metrics.MaxMemUtil,
+
+			GPUMemoryUsedMB: metrics.GPUMemoryUsedMB,
+
+			Success: success,
+
+			CreatedAt: task.CreatedAt.Unix(),
 		}
 
-		if err := r.dbStore.RecordExecution(context.Background(), task, gpu, queueWait, metrics); err != nil {
+		if err := r.dbStore.RecordExecution(context.Background(), record); err != nil {
+
 			log.Printf("Failed to record execution metrics for task %s: %v", task.ID, err)
+
 		}
+
 	}
 }
 

@@ -127,6 +127,11 @@ var DefaultPredictions = map[string]types.ResourcePrediction{
 	},
 }
 
+// GetDefaultPrediction returns default prediction for cold start.
+func (p *ResourcePredictor) GetDefaultPrediction(taskType string) *types.ResourcePrediction {
+	return p.getDefaultPrediction(taskType)
+}
+
 // RefreshCache refreshes the stats cache.
 func (p *ResourcePredictor) RefreshCache(ctx context.Context, taskTypes []string) {
 	for _, taskType := range taskTypes {
@@ -144,13 +149,13 @@ func (p *ResourcePredictor) RefreshCache(ctx context.Context, taskTypes []string
 func GetTaskTypeName(taskType string) string {
 	// Normalize task type names
 	standardTypes := map[string]string{
-		"TASK_TYPE_EMBEDDING":  "embedding",
-		"TASK_TYPE_LLM":        "llm",
-		"TASK_TYPE_DIFFUSION":  "diffusion",
+		"TASK_TYPE_EMBEDDING":   "embedding",
+		"TASK_TYPE_LLM":         "llm",
+		"TASK_TYPE_DIFFUSION":   "diffusion",
 		"TASK_TYPE_UNSPECIFIED": "other",
-		"TASK_TYPE_OTHER":      "other",
-		"llm_inference":        "llm_inference",
-		"text_embedding":       "embedding",
+		"TASK_TYPE_OTHER":       "other",
+		"llm_inference":         "llm_inference",
+		"text_embedding":        "embedding",
 	}
 
 	if canonical, ok := standardTypes[taskType]; ok {

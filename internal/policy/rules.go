@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"algogpu/api"
-	"algogpu/internal/predictor"
 	"algogpu/pkg/types"
 )
 
@@ -35,7 +34,7 @@ func NewRules() *Rules {
 }
 
 // ApplyRules applies policy rules to determine task priority.
-func (r *Rules) ApplyRules(task *types.Task, prediction *predictor.ResourcePrediction, queueSize int) float64 {
+func (r *Rules) ApplyRules(task *types.Task, prediction *types.ResourcePrediction, queueSize int) float64 {
 	priority := 0.0
 
 	// Rule 1: Short task bonus
