@@ -13,6 +13,7 @@ func TestTaskStateMachine_CreateTask(t *testing.T) {
 
 	if state == nil {
 		t.Error("Expected state to be created")
+		return
 	}
 
 	if state.TaskID != "task-1" {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"time"
 
 	"google.golang.org/grpc"
 
@@ -20,6 +21,7 @@ type Server struct {
 	taskQueue *queue.TaskQueue
 	gpuPool   *gpu.Pool
 	scheduler *scheduler.Scheduler
+	collector *gpu.Collector
 }
 
 // NewServer creates a new gRPC server with scheduler
@@ -37,10 +39,15 @@ func NewServer() *Server {
 	sched := scheduler.NewScheduler(cfg, taskQueue, gpuPool)
 	sched.Start()
 
+	// Start GPU metrics collector
+	collector := gpu.NewCollector(gpuPool, 5*time.Second)
+	collector.Start()
+
 	return &Server{
 		taskQueue: taskQueue,
 		gpuPool:   gpuPool,
 		scheduler: sched,
+		collector: collector,
 	}
 }
 
@@ -128,10 +135,15 @@ func Run(port string) {
 	}
 
 	grpcServer := grpc.NewServer()
-	api.RegisterGPUSchedulerServer(grpcServer, NewServer())
+	server := NewServer()
+	api.RegisterGPUSchedulerServer(grpcServer, server)
 
 	log.Printf("gRPC server listening on %s", port)
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}
+
+	// Stop collector when server stops
+	server.collector.Stop()
+	log.Println("GPU metrics collector stopped")
 }

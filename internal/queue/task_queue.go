@@ -166,9 +166,7 @@ func (q *TaskQueue) GetAllPending() []*types.Task {
 	defer q.mu.RUnlock()
 
 	tasks := make([]*types.Task, q.heap.Len())
-	for i, task := range *q.heap {
-		tasks[i] = task
-	}
+	copy(tasks, *q.heap)
 
 	return tasks
 }

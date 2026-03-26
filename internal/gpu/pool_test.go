@@ -28,16 +28,32 @@ func TestPool_AddGPU(t *testing.T) {
 		t.Errorf("AddGPU() added %d GPUs, want 2", len(gpus))
 	}
 
-	if gpus[0].ID != 0 {
-		t.Errorf("GPU 0 ID = %d, want 0", gpus[0].ID)
+	// Verify each GPU was added correctly
+	gpuMap := make(map[int]*GPU)
+	for _, gpu := range gpus {
+		gpuMap[gpu.ID] = gpu
 	}
 
-	if gpus[0].Name != "GPU-0" {
-		t.Errorf("GPU 0 name = %s, want GPU-0", gpus[0].Name)
+	if gpu, ok := gpuMap[0]; !ok {
+		t.Error("GPU 0 not found")
+	} else {
+		if gpu.Name != "GPU-0" {
+			t.Errorf("GPU 0 name = %s, want GPU-0", gpu.Name)
+		}
+		if gpu.MemoryTotal != 8192 {
+			t.Errorf("GPU 0 memory = %d, want 8192", gpu.MemoryTotal)
+		}
 	}
 
-	if gpus[0].MemoryTotal != 8192 {
-		t.Errorf("GPU 0 memory = %d, want 8192", gpus[0].MemoryTotal)
+	if gpu, ok := gpuMap[1]; !ok {
+		t.Error("GPU 1 not found")
+	} else {
+		if gpu.Name != "GPU-1" {
+			t.Errorf("GPU 1 name = %s, want GPU-1", gpu.Name)
+		}
+		if gpu.MemoryTotal != 16384 {
+			t.Errorf("GPU 1 memory = %d, want 16384", gpu.MemoryTotal)
+		}
 	}
 }
 
@@ -341,11 +357,14 @@ func TestPool_Release(t *testing.T) {
 	gpu, _ := pool.GetGPU(0)
 
 	// Allocate GPU
-	gpu.Allocate("task-1", 2048)
+	err := gpu.Allocate("task-1", 2048)
+	if err != nil {
+		t.Fatalf("Allocate() error = %v", err)
+	}
 	gpu.Reserve("task-1")
 
 	// Release GPU
-	err := pool.Release(gpu)
+	err = pool.Release(gpu)
 
 	if err != nil {
 		t.Errorf("Release() error = %v", err)

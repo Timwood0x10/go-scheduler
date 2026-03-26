@@ -57,6 +57,11 @@ func main() {
 	// Create scheduler
 	sched := scheduler.NewScheduler(cfg, taskQueue, gpuPool)
 
+	// Create GPU metrics collector
+	collector := gpu.NewCollector(gpuPool, 5*time.Second)
+	collector.Start()
+	defer collector.Stop()
+
 	// Create plugin scheduler
 	pluginScheduler := plugin.NewPluginScheduler(sched, taskQueue, gpuPool)
 

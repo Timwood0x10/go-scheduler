@@ -11,6 +11,7 @@ func TestCostModel_NewCostModel(t *testing.T) {
 
 	if cm == nil {
 		t.Error("NewCostModel should not return nil")
+		return
 	}
 
 	if cm.buckets == nil {
@@ -55,6 +56,7 @@ func TestCostModel_EstimateCost(t *testing.T) {
 
 	if stats == nil {
 		t.Error("EstimateCost should not return nil")
+		return
 	}
 
 	if stats.AvgRuntimeMs <= 0 {

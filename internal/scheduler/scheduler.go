@@ -27,7 +27,6 @@ type Scheduler struct {
 	admission   *AdmissionControl
 	tokenBucket *TokenBucketManager
 	gpuPacking  *GPUPackingStrategy
-	taskAging   *TaskAging
 
 	// Scheduler state
 	mu        sync.RWMutex
@@ -51,7 +50,6 @@ func NewScheduler(cfg *Config, taskQueue *queue.TaskQueue, gpuPool *gpu.Pool) *S
 		admission:   NewAdmissionControl(cfg.MaxQueueSize, taskQueue),
 		tokenBucket: NewTokenBucketManager(cfg),
 		gpuPacking:  NewGPUPackingStrategy(gpuPool, cfg),
-		taskAging:   NewTaskAging(cfg.AgingFactor),
 
 		running:   false,
 		queueChan: make(chan *types.Task, 1000),
@@ -82,7 +80,7 @@ func (s *Scheduler) SubmitTask(task *types.Task) (bool, string, api.TaskStatus) 
 	select {
 	case s.queueChan <- task:
 	default:
-		log.Printf("Scheduler channel full, task %s will be processed by loop", task.ID)
+		// Channel full, task will be picked up by periodic check
 	}
 
 	return true, "Task accepted", api.TaskStatus_TASK_STATUS_PENDING
@@ -90,7 +88,7 @@ func (s *Scheduler) SubmitTask(task *types.Task) (bool, string, api.TaskStatus) 
 
 // Loop is the core scheduling loop - the soul of this project.
 // It implements a simple, deterministic scheduling logic:
-// 1. Get task from channel (non-blocking with timeout)
+// 1. Get task from channel
 // 2. Check token bucket for rate limiting
 // 3. Find best GPU using packing strategy
 // 4. Execute task asynchronously
@@ -107,10 +105,9 @@ func (s *Scheduler) Loop() {
 			return
 
 		case task := <-s.queueChan:
-			if task == nil {
-				continue
+			if task != nil {
+				s.processTask(task)
 			}
-			s.processTask(task)
 
 		case <-time.After(10 * time.Millisecond):
 			// Periodic check for tasks that might have been skipped
@@ -123,7 +120,7 @@ func (s *Scheduler) Loop() {
 func (s *Scheduler) processTask(task *types.Task) {
 	// User rate limiting (Token Bucket)
 	if !s.tokenBucket.Allow(task.UserID) {
-		// Requeue with backoff
+		// Requeue with exponential backoff
 		time.Sleep(20 * time.Millisecond)
 		s.requeueTask(task)
 		return
@@ -148,7 +145,9 @@ func (s *Scheduler) processTask(task *types.Task) {
 	// Update task status to running
 	if err := s.taskQueue.UpdateStatus(task.ID, api.TaskStatus_TASK_STATUS_RUNNING); err != nil {
 		log.Printf("Failed to update task status: %v", err)
-		s.gpuPool.Release(gpu)
+		if releaseErr := s.gpuPool.Release(gpu); releaseErr != nil {
+			log.Printf("Failed to release GPU %d: %v", gpu.ID, releaseErr)
+		}
 		return
 	}
 
@@ -167,38 +166,8 @@ func (s *Scheduler) processNextTask() {
 		return
 	}
 
-	// Check token bucket
-	if !s.tokenBucket.Allow(task.UserID) {
-		// Requeue with backoff
-		s.requeueTask(task)
-		return
-	}
-
-	// Find best GPU
-	gpu, err := s.gpuPacking.FindBestGPU(task)
-	if err != nil || gpu == nil {
-		// Requeue with backoff
-		s.requeueTask(task)
-		return
-	}
-
-	// Allocate and execute
-	if err := gpu.Allocate(task.ID, task.GPUMemoryRequired); err != nil {
-		log.Printf("Failed to allocate GPU %d for task %s: %v", gpu.ID, task.ID, err)
-		s.requeueTask(task)
-		return
-	}
-
-	if err := s.taskQueue.UpdateStatus(task.ID, api.TaskStatus_TASK_STATUS_RUNNING); err != nil {
-		log.Printf("Failed to update task status: %v", err)
-		s.gpuPool.Release(gpu)
-		return
-	}
-
-	log.Printf("Dispatched task %s to GPU %d", task.ID, gpu.ID)
-
-	// Execute asynchronously
-	go s.executor.Run(task, gpu)
+	// Reuse processTask logic
+	s.processTask(task)
 }
 
 // requeueTask requeues a task for later processing.

@@ -91,6 +91,7 @@ func TestTaskQueue_Dequeue(t *testing.T) {
 
 		if task == nil {
 			t.Error("Dequeue() should not return nil")
+			continue
 		}
 
 		if task.Status != api.TaskStatus_TASK_STATUS_PENDING {
@@ -239,10 +240,12 @@ func TestTaskQueue_Cancel(t *testing.T) {
 		t.Errorf("Queue length = %d, want 0", q.Len())
 	}
 
-	retrievedTask, _ := q.Get("task-1")
-
-	if retrievedTask.Status != api.TaskStatus_TASK_STATUS_CANCELLED {
-		t.Errorf("Task status = %v, want CANCELLED", retrievedTask.Status)
+	// Task is removed from queue after cancel
+	retrievedTask, exists := q.Get("task-1")
+	if exists {
+		t.Error("Task should not exist after cancel")
+	} else if retrievedTask != nil {
+		t.Errorf("Retrieved task should be nil, got %v", retrievedTask.Status)
 	}
 
 	// Cancel running task

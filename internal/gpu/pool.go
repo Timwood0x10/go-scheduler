@@ -26,15 +26,21 @@ type GPU struct {
 }
 
 // CanFit checks if a task can fit on a GPU considering available memory.
-func (g *GPU) CanFit(memoryRequired int64) bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
+// This method does NOT acquire locks - caller must hold appropriate lock.
+func (g *GPU) canFitUnsafe(memoryRequired int64) bool {
 	if g.ReservedBy != "" {
 		return false
 	}
 
 	return g.MemoryTotal-g.MemoryUsed >= memoryRequired
+}
+
+// CanFit checks if a task can fit on a GPU considering available memory.
+func (g *GPU) CanFit(memoryRequired int64) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	return g.canFitUnsafe(memoryRequired)
 }
 
 // Allocate allocates memory for a task on this GPU.
@@ -187,10 +193,12 @@ func (p *Pool) GetGPU(id int) (*GPU, bool) {
 }
 
 // GetAllGPUs returns all GPUs in the pool.
+// Returns a snapshot of current GPUs - caller should not modify.
 func (p *Pool) GetAllGPUs() []*GPU {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
+	// Pre-allocate slice to avoid multiple allocations
 	gpus := make([]*GPU, 0, len(p.GPUs))
 	for _, gpu := range p.GPUs {
 		gpus = append(gpus, gpu)
@@ -209,11 +217,8 @@ func (p *Pool) Allocate(memoryRequired int64) *GPU {
 	smallestWaste := int64(-1)
 
 	for _, gpu := range p.GPUs {
-		if !gpu.CanFit(memoryRequired) {
-			continue
-		}
-
-		if gpu.IsReserved() {
+		// Check if GPU can fit (using unsafe check to avoid nested locks)
+		if !gpu.canFitUnsafe(memoryRequired) {
 			continue
 		}
 
@@ -231,7 +236,9 @@ func (p *Pool) Allocate(memoryRequired int64) *GPU {
 	}
 
 	// Perform allocation outside read lock
-	bestGPU.Allocate("", memoryRequired)
+	if err := bestGPU.Allocate("", memoryRequired); err != nil {
+		return nil
+	}
 
 	return bestGPU
 }

@@ -102,7 +102,9 @@ func (m *Monitor) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	response := `{"status": "healthy", "timestamp": ` + strconv.FormatInt(time.Now().Unix(), 10) + `}`
-	w.Write([]byte(response))
+	if _, err := w.Write([]byte(response)); err != nil {
+		log.Printf("Failed to write health response: %v", err)
+	}
 }
 
 // handleMetrics handles metrics requests
@@ -142,7 +144,9 @@ func (m *Monitor) handleGPUMetrics(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(metrics))
+	if _, err := w.Write([]byte(metrics)); err != nil {
+		log.Printf("Failed to write GPU metrics response: %v", err)
+	}
 }
 
 // handleQueueStatus handles queue status requests
