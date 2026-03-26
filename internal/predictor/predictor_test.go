@@ -17,14 +17,13 @@ func TestNewResourcePredictor(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 
-	store, err := db.NewSQLiteStore(tmpFile.Name())
+	store, err := db.NewStore(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
 	defer store.Close()
 
-	cache := NewStatsCache(5 * time.Second)
-	predictor := NewResourcePredictor(store, cache)
+	predictor := NewResourcePredictor(store)
 
 	if predictor == nil {
 		t.Fatal("Expected non-nil predictor")
@@ -39,14 +38,13 @@ func TestPredict(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 
-	store, err := db.NewSQLiteStore(tmpFile.Name())
+	store, err := db.NewStore(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
 	defer store.Close()
 
-	cache := NewStatsCache(5 * time.Second)
-	predictor := NewResourcePredictor(store, cache)
+	predictor := NewResourcePredictor(store)
 
 	// Test prediction with no data
 	ctx := context.Background()
@@ -94,7 +92,7 @@ func TestPredictWithHistoricalData(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 
-	store, err := db.NewSQLiteStore(tmpFile.Name())
+	store, err := db.NewStore(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -108,8 +106,7 @@ func TestPredictWithHistoricalData(t *testing.T) {
 	// Note: This would require actual Task, GPU, and Metrics objects
 	// For now, we'll test the default prediction behavior
 
-	cache := NewStatsCache(5 * time.Second)
-	predictor := NewResourcePredictor(store, cache)
+	predictor := NewResourcePredictor(store)
 
 	prediction := predictor.Predict(ctx, taskType)
 
@@ -130,14 +127,13 @@ func TestRefreshCache(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 
-	store, err := db.NewSQLiteStore(tmpFile.Name())
+	store, err := db.NewStore(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
 	defer store.Close()
 
-	cache := NewStatsCache(5 * time.Second)
-	predictor := NewResourcePredictor(store, cache)
+	predictor := NewResourcePredictor(store)
 
 	ctx := context.Background()
 	taskTypes := []string{"llm", "embedding", "diffusion"}
@@ -159,14 +155,13 @@ func TestGetDefaultPrediction(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 
-	store, err := db.NewSQLiteStore(tmpFile.Name())
+	store, err := db.NewStore(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
 	defer store.Close()
 
-	cache := NewStatsCache(5 * time.Second)
-	predictor := NewResourcePredictor(store, cache)
+	predictor := NewResourcePredictor(store)
 
 	tests := []struct {
 		taskType       string
@@ -208,14 +203,13 @@ func TestPredictQueueWait(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 
-	store, err := db.NewSQLiteStore(tmpFile.Name())
+	store, err := db.NewStore(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
 	defer store.Close()
 
-	cache := NewStatsCache(5 * time.Second)
-	predictor := NewResourcePredictor(store, cache)
+	predictor := NewResourcePredictor(store)
 
 	ctx := context.Background()
 

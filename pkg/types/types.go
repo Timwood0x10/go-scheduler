@@ -14,6 +14,7 @@ type Task struct {
 	GPUMemoryRequired  int64 // MB
 	GPUComputeRequired int64 // TFLOPS
 	EstimatedRuntimeMs int64
+	Priority           int64
 	Payload            []byte
 	Status             api.TaskStatus
 	CreatedAt          time.Time

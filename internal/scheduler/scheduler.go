@@ -50,8 +50,7 @@ func NewScheduler(cfg *Config, taskQueue *queue.TaskQueue, gpuPool *gpu.Pool, db
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Initialize data-driven components
-	cache := predictor.NewStatsCache(5 * time.Minute)
-	resPredictor := predictor.NewResourcePredictor(dbStore, cache)
+	resPredictor := predictor.NewResourcePredictor(dbStore)
 	policyEngine := policy.NewEngine(resPredictor, dbStore)
 
 	return &Scheduler{

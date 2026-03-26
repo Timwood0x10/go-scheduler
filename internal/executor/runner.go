@@ -63,44 +63,33 @@ func (r *Runner) Run(task *types.Task, gpu *gpu.GPU) {
 	task.CompletedAt = time.Now()
 
 	// Record execution metrics to database
-
 	if r.dbStore != nil {
-
 		queueWait := task.StartedAt.Sub(task.CreatedAt)
 
+		// Calculate metrics from GPU
+		avgGPUUtil := float64(gpu.ComputeUtil)
+		maxGPUUtil := float64(gpu.ComputeUtil)
+		avgMemUtil := float64(gpu.MemoryUtil)
+		maxMemUtil := float64(gpu.MemoryUtil)
+		gpuMemoryUsedMB := gpu.MemoryUsed
+
 		// Create execution record
-
 		record := &db.TaskExecutionRecord{
-
-			TaskID: task.ID,
-
-			TaskType: task.Type.String(),
-
-			UserID: task.UserID,
-
-			GPUID: gpu.ID,
-
-			GPUModel: gpu.Name,
-
-			Priority: task.Priority,
-
-			QueueWaitMs: queueWait.Milliseconds(),
-
+			TaskID:          task.ID,
+			TaskType:        task.Type.String(),
+			UserID:          task.UserID,
+			GPUID:           gpu.ID,
+			GPUModel:        gpu.Name,
+			Priority:        int(task.Priority),
+			QueueWaitMs:     queueWait.Milliseconds(),
 			ExecutionTimeMs: duration.Milliseconds(),
-
-			AvgGPUUtil: metrics.AvgGPUUtil,
-
-			MaxGPUUtil: metrics.MaxGPUUtil,
-
-			AvgMemUtil: metrics.AvgMemUtil,
-
-			MaxMemUtil: metrics.MaxMemUtil,
-
-			GPUMemoryUsedMB: metrics.GPUMemoryUsedMB,
-
-			Success: success,
-
-			CreatedAt: task.CreatedAt.Unix(),
+			AvgGPUUtil:      avgGPUUtil,
+			MaxGPUUtil:      maxGPUUtil,
+			AvgMemUtil:      avgMemUtil,
+			MaxMemUtil:      maxMemUtil,
+			GPUMemoryUsedMB: gpuMemoryUsedMB,
+			Success:         success,
+			CreatedAt:       task.CreatedAt.Unix(),
 		}
 
 		if err := r.dbStore.RecordExecution(context.Background(), record); err != nil {

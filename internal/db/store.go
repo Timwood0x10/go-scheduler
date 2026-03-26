@@ -234,32 +234,6 @@ func (s *Store) RecordTaskExecution(ctx context.Context, taskID, taskType, userI
 }
 
 // GetTaskTypeStats retrieves statistics for a specific task type (alias for GetTaskStats).
-	_, err := s.db.ExecContext(ctx, query,
-		record.TaskID,
-		record.TaskType,
-		record.UserID,
-		record.GPUID,
-		record.GPUModel,
-		record.Priority,
-		record.QueueWaitMs,
-		record.ExecutionTimeMs,
-		record.AvgGPUUtil,
-		record.MaxGPUUtil,
-		record.AvgMemUtil,
-		record.MaxMemUtil,
-		record.GPUMemoryUsedMB,
-		success,
-		record.CreatedAt,
-	)
-
-	if err != nil {
-		return fmt.Errorf("failed to record execution: %w", err)
-	}
-
-	return nil
-}
-
-// GetTaskTypeStats retrieves statistics for a specific task type (alias for GetTaskStats).
 func (s *Store) GetTaskTypeStats(ctx context.Context, taskType string) (*TaskStats, error) {
 	return s.GetTaskStats(ctx, taskType, 7)
 }
@@ -301,11 +275,6 @@ func (s *Store) GetTaskStats(ctx context.Context, taskType string, days int) (*T
 	return stats, nil
 }
 
-// GetUserStats retrieves statistics for a specific user (alias with default days).
-func (s *Store) GetUserStats(ctx context.Context, userID string) (*UserStats, error) {
-	return s.GetUserStats(ctx, userID, 7)
-}
-
 // GetUserStats retrieves statistics for a specific user.
 func (s *Store) GetUserStats(ctx context.Context, userID string, days int) (*UserStats, error) {
 	stats := &UserStats{
@@ -335,7 +304,7 @@ func (s *Store) GetUserStats(ctx context.Context, userID string, days int) (*Use
 		return nil, fmt.Errorf("failed to get user stats: %w", err)
 	}
 
-return &stats, nil
+	return stats, nil
 }
 
 // GetGPUStats retrieves statistics for a specific GPU.
@@ -558,45 +527,4 @@ func (s *Store) GetExecutionStats(ctx context.Context, taskType string) (*Execut
 // Close closes the database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
-}
-
-// SQLiteStore is an alias for Store for backward compatibility.
-type SQLiteStore = Store
-
-// TaskStats represents aggregated statistics for a task type.
-type TaskStats struct {
-	TaskType       string
-	Count          int64
-	AvgDurationMs  int64
-	AvgMemoryMB    int64
-	AvgGPUUtil     float64
-	AvgMemUtil     float64
-	AvgQueueWaitMs int64
-}
-
-// QueueWaitStats represents queue wait time statistics.
-type QueueWaitStats struct {
-	TaskType     string
-	AvgWaitMs    int64
-	MinWaitMs    int64
-	MaxWaitMs    int64
-	TotalSamples int64
-}
-
-// ExecutionStats represents execution time statistics.
-type ExecutionStats struct {
-	TaskType       string
-	AvgExecutionMs int64
-	MinExecutionMs int64
-	MaxExecutionMs int64
-	TotalSamples   int64
-}
-
-// UserStats represents aggregated statistics for a user.
-type UserStats struct {
-	UserID          string
-	TotalTasks      int64
-	SuccessfulTasks int64
-	AvgDurationMs   int64
-	TotalGPUTimeSec float64
 }

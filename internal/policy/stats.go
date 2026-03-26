@@ -33,7 +33,7 @@ func (s *Stats) GetRecentStats(ctx context.Context, hours int) ([]*db.TaskStats,
 
 // GetUserStats retrieves statistics for a specific user.
 func (s *Stats) GetUserStats(ctx context.Context, userID string) (*db.UserStats, error) {
-	return s.store.GetUserStats(ctx, userID)
+	return s.store.GetUserStats(ctx, userID, 7)
 }
 
 // GetGPUStats retrieves statistics for a specific GPU.

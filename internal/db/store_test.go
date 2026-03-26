@@ -67,21 +67,28 @@ func TestRecordExecution(t *testing.T) {
 		MemoryUtil:  50,
 	}
 
-	// Create metrics
-	metrics := &types.ExecutionMetrics{
+	queueWait := 100 * time.Millisecond
+
+	// Record execution
+	record := &db.TaskExecutionRecord{
+		TaskID:          task.ID,
+		TaskType:        task.Type.String(),
+		UserID:          task.UserID,
+		GPUID:           gpu.ID,
+		GPUModel:        gpu.Name,
+		Priority:        task.Priority,
+		QueueWaitMs:     queueWait.Milliseconds(),
 		ExecutionTimeMs: 1500,
 		AvgGPUUtil:      85.5,
 		MaxGPUUtil:      95.0,
 		AvgMemUtil:      70.0,
 		MaxMemUtil:      80.0,
-		GPUMemoryUsedMB: 4096,
+		GPUMemoryUsedMB: gpu.MemoryUsed,
 		Success:         true,
+		CreatedAt:       task.CreatedAt.Unix(),
 	}
 
-	queueWait := 100 * time.Millisecond
-
-	// Record execution
-	err = store.RecordExecution(context.Background(), task, gpu, queueWait, metrics)
+	err = store.RecordExecution(context.Background(), record)
 	if err != nil {
 		t.Fatalf("Failed to record execution: %v", err)
 	}

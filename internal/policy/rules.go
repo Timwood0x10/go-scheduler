@@ -107,6 +107,6 @@ func (r *Rules) ShouldReject(task *types.Task, queueSize int) bool {
 }
 
 // GetPriority returns the calculated priority for a task.
-func (r *Rules) GetPriority(task *types.Task, prediction *predictor.ResourcePrediction, queueSize int) float64 {
+func (r *Rules) GetPriority(task *types.Task, prediction *types.ResourcePrediction, queueSize int) float64 {
 	return r.ApplyRules(task, prediction, queueSize)
 }
