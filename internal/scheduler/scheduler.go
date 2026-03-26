@@ -9,8 +9,11 @@ import (
 	"time"
 
 	"algogpu/api"
+	"algogpu/internal/db"
 	"algogpu/internal/executor"
 	"algogpu/internal/gpu"
+	"algogpu/internal/policy"
+	"algogpu/internal/predictor"
 	"algogpu/internal/queue"
 	"algogpu/pkg/types"
 )
@@ -28,6 +31,11 @@ type Scheduler struct {
 	tokenBucket *TokenBucketManager
 	gpuPacking  *GPUPackingStrategy
 
+	// Data-driven components
+	dbStore      *db.SQLiteStore
+	predictor    *predictor.ResourcePredictor
+	policyEngine *policy.Engine
+
 	// Scheduler state
 	mu        sync.RWMutex
 	running   bool
@@ -38,14 +46,19 @@ type Scheduler struct {
 }
 
 // NewScheduler creates a new Scheduler with minimal configuration.
-func NewScheduler(cfg *Config, taskQueue *queue.TaskQueue, gpuPool *gpu.Pool) *Scheduler {
+func NewScheduler(cfg *Config, taskQueue *queue.TaskQueue, gpuPool *gpu.Pool, dbStore *db.SQLiteStore) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// Initialize data-driven components
+	cache := predictor.NewStatsCache(5 * time.Minute)
+	resPredictor := predictor.NewResourcePredictor(dbStore, cache)
+	policyEngine := policy.NewEngine(resPredictor)
 
 	return &Scheduler{
 		cfg:       cfg,
 		taskQueue: taskQueue,
 		gpuPool:   gpuPool,
-		executor:  executor.NewRunner(gpuPool),
+		executor:  executor.NewRunner(gpuPool, dbStore),
 
 		admission:   NewAdmissionControl(cfg.MaxQueueSize, taskQueue),
 		tokenBucket: NewTokenBucketManager(cfg),
@@ -71,7 +84,21 @@ func (s *Scheduler) SubmitTask(task *types.Task) (bool, string, api.TaskStatus) 
 		return false, err.Error(), api.TaskStatus_TASK_STATUS_REJECTED
 	}
 
-	// 3. Enqueue task
+	// 3. Policy engine evaluation (data-driven decision)
+	queueSize := s.taskQueue.Len()
+	decision, err := s.policyEngine.EvaluateTask(context.Background(), task, queueSize)
+	if err != nil {
+		log.Printf("Policy engine evaluation failed for task %s: %v", task.ID, err)
+		// Continue with default decision
+	} else {
+		// Store policy decision in task metadata
+		task.EstimatedRuntimeMs = decision.EstimatedDuration
+		task.Priority = int64(decision.Priority)
+		log.Printf("Task %s policy decision: duration=%dms, priority=%.2f, allow_packing=%v",
+			task.ID, decision.EstimatedDuration, decision.Priority, decision.AllowPacking)
+	}
+
+	// 4. Enqueue task
 	if err := s.taskQueue.Enqueue(task); err != nil {
 		return false, err.Error(), api.TaskStatus_TASK_STATUS_REJECTED
 	}

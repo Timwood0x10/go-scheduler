@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"algogpu/api"
+	"algogpu/internal/db"
 	"algogpu/internal/gpu"
 	"algogpu/pkg/types"
 )
@@ -17,13 +18,15 @@ import (
 type Runner struct {
 	gpuPool *gpu.Pool
 	ctx     context.Context
+	dbStore *db.SQLiteStore
 }
 
 // NewRunner creates a new task executor.
-func NewRunner(gpuPool *gpu.Pool) *Runner {
+func NewRunner(gpuPool *gpu.Pool, dbStore *db.SQLiteStore) *Runner {
 	return &Runner{
 		gpuPool: gpuPool,
 		ctx:     context.Background(),
+		dbStore: dbStore,
 	}
 }
 
@@ -46,17 +49,36 @@ func (r *Runner) Run(task *types.Task, gpu *gpu.GPU) {
 	duration := time.Since(startTime)
 
 	// Update task status based on execution result
-	if err != nil {
-		log.Printf("Task %s failed on GPU %d: %v (duration: %v)", task.ID, gpu.ID, err, duration)
-		task.Status = api.TaskStatus_TASK_STATUS_FAILED
-		task.Message = err.Error()
-	} else {
+	success := err == nil
+	if success {
 		log.Printf("Task %s completed on GPU %d (duration: %v)", task.ID, gpu.ID, duration)
 		task.Status = api.TaskStatus_TASK_STATUS_COMPLETED
 		task.Message = "Task completed successfully"
+	} else {
+		log.Printf("Task %s failed on GPU %d: %v (duration: %v)", task.ID, gpu.ID, err, duration)
+		task.Status = api.TaskStatus_TASK_STATUS_FAILED
+		task.Message = err.Error()
 	}
 
 	task.CompletedAt = time.Now()
+
+	// Record execution metrics to database
+	if r.dbStore != nil {
+		queueWait := task.StartedAt.Sub(task.CreatedAt)
+		metrics := &types.ExecutionMetrics{
+			ExecutionTimeMs:   duration.Milliseconds(),
+			AvgGPUUtil:        float64(gpu.ComputeUtil),
+			MaxGPUUtil:        float64(gpu.ComputeUtil),
+			AvgMemUtil:        float64(gpu.MemoryUtil),
+			MaxMemUtil:        float64(gpu.MemoryUtil),
+			GPUMemoryUsedMB:   gpu.MemoryUsed,
+			Success:           success,
+		}
+
+		if err := r.dbStore.RecordExecution(context.Background(), task, gpu, queueWait, metrics); err != nil {
+			log.Printf("Failed to record execution metrics for task %s: %v", task.ID, err)
+		}
+	}
 }
 
 // executeTask executes a task based on its type.

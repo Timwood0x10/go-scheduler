@@ -63,3 +63,33 @@ func GetTaskCost(taskType api.TaskType) int64 {
 		return 1
 	}
 }
+
+// ExecutionMetrics represents metrics collected during task execution.
+type ExecutionMetrics struct {
+	TaskID          string
+	QueueWaitMs     int64
+	ExecutionTimeMs int64
+	AvgGPUUtil      float64
+	MaxGPUUtil      float64
+	AvgMemUtil      float64
+	MaxMemUtil      float64
+	GPUMemoryUsedMB int64
+	Success         bool
+}
+
+// ResourcePrediction represents predicted resource requirements for a task.
+type ResourcePrediction struct {
+	EstimatedDurationMs int64
+	EstimatedMemoryMB   int64
+	EstimatedGpuUtil    float64
+	AllowPacking        bool
+}
+
+// PolicyDecision represents scheduling policy decision for a task.
+type PolicyDecision struct {
+	Priority            int
+	EstimatedDuration   int64
+	EstimatedMemoryMB   int
+	AllowPacking        bool
+	EstimatedQueueWaitMs int64
+}

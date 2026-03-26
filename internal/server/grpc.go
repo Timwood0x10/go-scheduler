@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 
 	"algogpu/api"
+	"algogpu/internal/db"
 	"algogpu/internal/gpu"
 	"algogpu/internal/queue"
 	"algogpu/internal/scheduler"
@@ -22,6 +23,7 @@ type Server struct {
 	gpuPool   *gpu.Pool
 	scheduler *scheduler.Scheduler
 	collector *gpu.Collector
+	dbStore   *db.SQLiteStore
 }
 
 // NewServer creates a new gRPC server with scheduler
@@ -30,13 +32,20 @@ func NewServer() *Server {
 	taskQueue := queue.NewTaskQueue()
 	gpuPool := gpu.NewPool()
 
+	// Initialize SQLite database
+	dbStore, err := db.NewSQLiteStore("algogpu.db")
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer dbStore.Close()
+
 	// Add some dummy GPUs for testing
 	gpuPool.AddGPU(0, "NVIDIA GPU 0", 16384) // 16GB
 	gpuPool.AddGPU(1, "NVIDIA GPU 1", 16384)
 	gpuPool.AddGPU(2, "NVIDIA GPU 2", 32768) // 32GB
 	gpuPool.AddGPU(3, "NVIDIA GPU 3", 32768)
 
-	sched := scheduler.NewScheduler(cfg, taskQueue, gpuPool)
+	sched := scheduler.NewScheduler(cfg, taskQueue, gpuPool, dbStore)
 	sched.Start()
 
 	// Start GPU metrics collector
@@ -48,6 +57,8 @@ func NewServer() *Server {
 		gpuPool:   gpuPool,
 		scheduler: sched,
 		collector: collector,
+		dbStore:   dbStore,
+	}
 	}
 }
 
