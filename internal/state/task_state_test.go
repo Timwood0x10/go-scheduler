@@ -56,8 +56,12 @@ func TestTaskStateMachine_GetHistory(t *testing.T) {
 	sm := NewTaskStateMachine()
 	sm.CreateTask("task-1")
 
-	sm.Transition("task-1", api.TaskStatus_TASK_STATUS_RUNNING, "dispatched")
-	sm.Transition("task-1", api.TaskStatus_TASK_STATUS_COMPLETED, "finished")
+	if err := sm.Transition("task-1", api.TaskStatus_TASK_STATUS_RUNNING, "dispatched"); err != nil {
+		t.Fatalf("Failed to transition: %v", err)
+	}
+	if err := sm.Transition("task-1", api.TaskStatus_TASK_STATUS_COMPLETED, "finished"); err != nil {
+		t.Fatalf("Failed to transition: %v", err)
+	}
 
 	history, ok := sm.GetHistory("task-1")
 	if !ok {

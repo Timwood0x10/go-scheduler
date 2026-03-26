@@ -2,6 +2,7 @@ package state
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"algogpu/api"
@@ -158,6 +159,16 @@ func IsTerminalState(state api.TaskStatus) bool {
 
 // String returns a string representation of the state
 func (s *TaskState) String() string {
-	return fmt.Sprintf("TaskState{taskID=%s, state=%v, createdAt=%s, updatedAt=%s}",
-		s.TaskID, s.CurrentState, s.CreatedAt.Format(time.RFC3339), s.UpdatedAt.Format(time.RFC3339))
+	var b strings.Builder
+	b.Grow(128) // Pre-allocate capacity
+	b.WriteString("TaskState{taskID=")
+	b.WriteString(s.TaskID)
+	b.WriteString(", state=")
+	b.WriteString(s.CurrentState.String())
+	b.WriteString(", createdAt=")
+	b.WriteString(s.CreatedAt.Format(time.RFC3339))
+	b.WriteString(", updatedAt=")
+	b.WriteString(s.UpdatedAt.Format(time.RFC3339))
+	b.WriteString("}")
+	return b.String()
 }

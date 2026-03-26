@@ -2,8 +2,9 @@ package executor
 
 import (
 	"context"
-	"fmt"
 	"log"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,7 +41,15 @@ type TaskError struct {
 }
 
 func (e *TaskError) Error() string {
-	return fmt.Sprintf("task %s failed after %d retries: %v", e.TaskID, e.RetryCount, e.Err)
+	var b strings.Builder
+	b.Grow(64) // Pre-allocate capacity
+	b.WriteString("task ")
+	b.WriteString(e.TaskID)
+	b.WriteString(" failed after ")
+	b.WriteString(strconv.Itoa(e.RetryCount))
+	b.WriteString(" retries: ")
+	b.WriteString(e.Err.Error())
+	return b.String()
 }
 
 // IsRetriable returns true if the error is retriable
@@ -101,7 +110,7 @@ func (r *RetryExecutor) Execute(ctx context.Context, task *types.Task, gpuInfo *
 			return &TaskResult{
 				TaskID: task.ID,
 				Status: api.TaskStatus_TASK_STATUS_FAILED,
-				Error:  fmt.Sprintf("context cancelled: %v", ctx.Err()),
+				Error:  "context cancelled: " + ctx.Err().Error(),
 			}, ctx.Err()
 		default:
 		}
@@ -135,7 +144,7 @@ func (r *RetryExecutor) Execute(ctx context.Context, task *types.Task, gpuInfo *
 				return &TaskResult{
 					TaskID: task.ID,
 					Status: api.TaskStatus_TASK_STATUS_FAILED,
-					Error:  fmt.Sprintf("context cancelled: %v", ctx.Err()),
+					Error:  "context cancelled: " + ctx.Err().Error(),
 				}, ctx.Err()
 			case <-time.After(delay):
 			}
@@ -146,7 +155,7 @@ func (r *RetryExecutor) Execute(ctx context.Context, task *types.Task, gpuInfo *
 	return &TaskResult{
 		TaskID: task.ID,
 		Status: api.TaskStatus_TASK_STATUS_FAILED,
-		Error:  fmt.Sprintf("task failed after %d retries: %v", r.maxRetries+1, lastErr),
+		Error:  "task failed after " + strconv.Itoa(r.maxRetries+1) + " retries: " + lastErr.Error(),
 	}, lastErr
 }
 

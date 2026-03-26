@@ -3,7 +3,6 @@ package executor
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -80,7 +79,7 @@ func (r *TaskRunner) RunTask(task *types.Task, gpuInfo *gpu.GPU) {
 		executor, ok := r.executors[task.Type]
 		if !ok {
 			result.Status = api.TaskStatus_TASK_STATUS_FAILED
-			result.Error = fmt.Sprintf("no executor for task type: %v", task.Type)
+			result.Error = "no executor for task type: " + task.Type.String()
 			result.EndTime = time.Now()
 			result.Duration = result.EndTime.Sub(result.StartTime)
 			r.resultChan <- result

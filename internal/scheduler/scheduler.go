@@ -112,7 +112,9 @@ func (s *Scheduler) DispatchNext() *types.Task {
 		}
 
 		// Update task status to running
-		s.taskQueue.UpdateStatus(task.ID, api.TaskStatus_TASK_STATUS_RUNNING)
+		if err := s.taskQueue.UpdateStatus(task.ID, api.TaskStatus_TASK_STATUS_RUNNING); err != nil {
+			log.Printf("Failed to update task status: %v", err)
+		}
 
 		log.Printf("Dispatched task %s to GPU %d", task.ID, gpu.ID)
 

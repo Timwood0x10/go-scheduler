@@ -3,11 +3,11 @@ package monitor
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -101,7 +101,8 @@ func (m *Monitor) Stop() {
 func (m *Monitor) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status": "healthy", "timestamp": %d}`, time.Now().Unix())
+	response := `{"status": "healthy", "timestamp": ` + strconv.FormatInt(time.Now().Unix(), 10) + `}`
+	w.Write([]byte(response))
 }
 
 // handleMetrics handles metrics requests
@@ -141,7 +142,7 @@ func (m *Monitor) handleGPUMetrics(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, metrics)
+	w.Write([]byte(metrics))
 }
 
 // handleQueueStatus handles queue status requests

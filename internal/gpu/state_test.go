@@ -8,10 +8,6 @@ import (
 func TestNewState(t *testing.T) {
 	state := NewState(0, "NVIDIA GPU 0", 16384)
 
-	if state == nil {
-		t.Error("NewState should not return nil")
-	}
-
 	if state.ID != 0 {
 		t.Errorf("expected ID 0, got %d", state.ID)
 	}
